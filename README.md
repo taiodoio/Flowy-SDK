@@ -1,106 +1,61 @@
-# FlowySDK (iOS)
+# Flowy - AI-Powered User Session Analysis
 
-**FlowySDK** is a next-generation analytics tool that "sees" what your users see. Instead of relying on brittle view IDs or manual tagging, Flowy uses **Computer Vision (OCR)** and **AI** to automatically track user flows, interactions, and dynamic UI states (like Toasts/Errors) without invasive code changes.
+**Flowy** is a next-generation analytics platform that "sees" what your users see. It combines a lightweight iOS SDK with a powerful Web Dashboard to reconstruct user journeys using **Computer Vision**, **DOM Analysis**, and **Generative AI**.
 
-## 🚀 Features
+![Flowy Dashboard](https://placehold.co/1200x600/1e293b/white?text=Flowy+Dashboard+Preview)
 
-- **👁️ Vision-Based Tracking**: Captures screen text using Apple's Vision framework. Tapping "Add to Cart" logs "Add to Cart", regardless of the underlying view structure (SwiftUI, UIKit, ReactNative, Flutter).
-- **✅ SwiftUI Compatible**: Works seamlessly with SwiftUI Buttons and Gestures via global touch interception.
-- **🛡️ Privacy First**: Automatically skips OCR on secure fields (passwords, credit cards).
-- **🔥 Dynamic State Detection**: Automatically detects transient UI states like **Error Toasts**, Success Messages, or Alerts appearing after an action.
-- **🔋 Background Safe**: Ensures critical events are captured even if the user immediately backgrounds the app.
+## 🏗️ Architecture
 
----
+The repository is divided into two main components:
 
-## 📦 Installation
-
-FlowySDK is distributed as a Swift Package.
-
-### 1. Add Package
-1.  Open your project in Xcode.
-2.  Go to **File > Add Package Dependencies...**
-3.  Enter the repository URL (or local path) of FlowySDK.
-4.  Add `FlowySDK` to your App Target.
+| Component | Path | Description |
+| :--- | :--- | :--- |
+| **iOS SDK** | [`/ios-sdk`](./ios-sdk) | The data capture engine. Uses **Apple Vision Framework** and **DOM Swizzling** to log user interactions, screens, and errors efficiently and privately. |
+| **Web Dashboard** | [`/web`](./web) | A Next.js 14 application that visualizes sessions. It uses **Google Gemini AI** to analyze logs and generate human-readable reports, flow graphs, and UX insights. |
 
 ---
 
-## 🛠️ Configuration
+## 🚀 Getting Started
 
-Initialize the SDK as early as possible in your app lifecycle.
+### 1. iOS Integration
+To start tracking sessions in your iOS app, check the [iOS SDK Documentation](./ios-sdk/README.md).
 
-### SwiftUI (`App` Struct)
-
+**Quick Setup:**
+1.  Add `FlowySDK` via Swift Package Manager.
+2.  Initialize in your `App` or `AppDelegate`.
 ```swift
-import SwiftUI
-import FlowySDK
-
-@main
-struct YourApp: App {
-    init() {
-        // 🚀 Initialize Flowy
-        Flowy.configure(apiKey: "YOUR_API_KEY")
-    }
-
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
-    }
-}
+Flowy.configure(apiKey: "YOUR_API_KEY")
 ```
 
-### UIKit (`AppDelegate`)
+### 2. Running the Dashboard
+The dashboard is where you upload and analyze session logs (`flowy_session.json`).
 
-```swift
-import UIKit
-import FlowySDK
-
-@main
-class AppDelegate: UIResponder, UIApplicationDelegate {
-    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        
-        // 🚀 Initialize Flowy
-        Flowy.configure(apiKey: "YOUR_API_KEY")
-        
-        return true
-    }
-}
+```bash
+cd web
+npm install
+# Set your GEMINI_API_KEY in .env.local
+npm run dev
 ```
 
----
-
-## 📖 How It Works
-
-1.  **Auto-Capture**: The SDK automatically swizzles `UIWindow` and `UIApplication` to detect every touch.
-2.  **Vision Analysis**: On every tap, it silently captures a snapshot and uses Neural Text Recognition (OCR) to identify the element under the user's finger (e.g., "Checkout", "Settings").
-3.  **Proximity Search**: Precision isn't required. Use smart proximity search to match icons to nearby text labels.
-4.  **Logging**: Data is stored locally in `flowy_session.json` (Documents directory) and persisted across sessions.
-
-### Manual Logging (Optional)
-
-While Flowy is automated, you can manually log custom errors or screens if needed:
-
-```swift
-// Force log a specific error
-Flowy.shared.trackError(description: "Payment Gateway Timeout")
-
-// Force log a specific screen view
-Flowy.shared.trackScreen(name: "CheckoutWebView")
-```
+Visit `http://localhost:3000` to see your session list.
 
 ---
 
-## 🔒 Privacy
+## ✨ Key Features
 
-Flowy respects user privacy by design:
-- **Secure Fields**: Taps on `SecureField` (passwords) are redacted (`[SECURE_FIELD]`).
-- **Local Processing**: OCR happens on-device using Apple's Vision framework.
+-   **👁️ Hybrid Analysis Engine**: Combines OCR (Vision) with View Hierarchy (DOM) to understand *exactly* what button was tapped, even in complex custom UIs.
+-   **🧠 AI-Powered Insights**: Uses Gemini 1.5 Flash to generate forensic reports, flagging "Rage Taps", "Confusion", and "Critical Errors" automatically.
+-   **🚇 Metro Map Visualization**: Visualizes the user journey as a clean subway map, highlighting Success (Green) vs. Error (Red) paths.
+-   **🔒 Privacy First**: All processing starts on-device. Sensitive fields (passwords) are strictly redacted before they leave the phone.
 
 ---
 
-## 📊 Viewing Data
+## 🤝 Contributing
 
-1.  Run your app in the Simulator/Device.
-2.  Interact with it (Tap buttons, trigger errors).
-3.  Retrieve the `flowy_session.json` log from the app's Documents directory.
-4.  Upload it to the **Flowy Web Dashboard** to see the visualized user journey node graph.
+1.  Fork the repo.
+2.  Create a feature branch.
+3.  Submit a Pull Request.
+
+---
+
+*Built with ❤️ by Flavio Montagner*
