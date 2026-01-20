@@ -1,5 +1,7 @@
 # Flowy - AI-Powered User Session Analysis
 
+![Flowy Hero](assets/flowy-hero.png)
+
 **Flowy** is a next-generation analytics platform that "sees" what your users see. It combines a lightweight iOS SDK with a powerful Web Dashboard to reconstruct user journeys using **Computer Vision**, **DOM Analysis**, and **Generative AI**.
 
 
