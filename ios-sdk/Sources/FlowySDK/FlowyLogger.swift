@@ -44,24 +44,61 @@ class FlowyLogger {
     // MARK: - Vision Logging (New Core)
     
     /// Called by the Vision/OCR engine when a tap is processed
-    func logVisionInteraction(text: String?, coordinates: CGPoint?) {
+    /// Called by the Vision/OCR engine when a tap is processed
+    func logVisionInteraction(text: String?, coordinates: CGPoint?, window: UIWindow?) {
         // Map CGPoint to FlowyEvent.Coordinate
         var coord: FlowyEvent.Coordinate? = nil
+        var domNodes: [FlowyDomNode]? = nil
+        var elementType: String? = nil
+
         if let p = coordinates {
             coord = FlowyEvent.Coordinate(x: Double(p.x), y: Double(p.y))
+            
+            // Capture DOM Context (Hybrid) - Prioritize Main Thread Capture
+            if let win = window {
+                 if Thread.isMainThread {
+                     domNodes = FlowyTreeWalker.captureHierarchy(in: win)
+                 } else {
+                     DispatchQueue.main.sync {
+                         domNodes = FlowyTreeWalker.captureHierarchy(in: win)
+                     }
+                 }
+                
+                // Hybrid Match: Find exact element at tap point
+                if let nodes = domNodes, let match = FlowyHybridMatcher.findBestMatch(in: nodes, for: p) {
+                    // Start simplified: Just identifying key interactive types
+                    if match.className.contains("Switch") || 
+                       match.className.contains("Button") || 
+                       match.className.contains("TextField") ||
+                       match.className.contains("Slider") {
+                        elementType = match.className
+                    }
+                }
+            }
         }
         
-        let textToLog = text ?? "NIL"
+        var textToLog = text ?? "NIL"
+        
+        // Enhance text with Hybrid info
+        if let type = elementType {
+            textToLog = "\(textToLog) [\(type)]"
+        }
+        
+        // Determine Action Type
+        // If it's a secure field, keep SECURE_TAP. 
+        // If it's a known interactive element, we might want to flag it? 
+        // For now, keep "TAP", the AI will parse [UISwitch].
+        let action = textToLog == "[SECURE_FIELD]" ? "SECURE_TAP" : "TAP"
         
         let event = FlowyEvent(
-            action: textToLog == "[SECURE_FIELD]" ? "SECURE_TAP" : "TAP",
+            action: action,
             ocr_text: textToLog,
             coordinates: coord,
             screen_name: self.currentScreenName
         )
         
         storage.appendEvent(event)
-        print("[Flowy] Vision TAP: [\(textToLog)] at (\(Int(coord?.x ?? 0)), \(Int(coord?.y ?? 0))) on \(self.currentScreenName)")
+        print("[Flowy] Hybrid TAP: [\(textToLog)] at (\(Int(coord?.x ?? 0)), \(Int(coord?.y ?? 0))) on \(self.currentScreenName)")
     }
     
     // MARK: - Screen Lifecycle
@@ -130,14 +167,13 @@ class FlowyLogger {
                      return // Log first error found
                 }
                 
-                // Optional: Detect Success Toasts too if needed
-                if text.lowercased().contains("success") || text.lowercased().contains("saved") {
+                // Success Detection
+                if FlowyHeuristics.isSuccessText(text) {
                      DispatchQueue.main.async {
-                        // Log as generic ACTION or INFO? Or just let user see it in screenshot?
-                        // User specifically asked for "Toast Error notification appears".
-                        // Let's log 'Toast' event? Or just standard heuristics?
-                        // Using 'ERROR' type for errors is key.
+                         // Log as SUCCESS type
+                         self.logManualEvent(type: "SUCCESS", text: text)
                      }
+                     return // Log first success found
                 }
             }
         }
@@ -190,10 +226,31 @@ class FlowyLogger {
         logScreenViewEvent(name: name)
     }
     
-    // Used by Flowy.trackError and Swizzler (legacy)
-    func logInteration(type: String, element: UIView, text: String?) {
-        // Map to manual event
-        logManualEvent(type: type, text: text)
+    // Used by Flowy.trackError and Swizzler (legacy) -> Now redirected to logAction if needed or kept for compatibility
+    func logAction(type: String, view: UIView?, touchPoint: CGPoint?, window: UIWindow?) {
+        let timestamp = Date().timeIntervalSince1970
+        
+        // 1. Capture DOM (Main Thread - keeping it fast)
+        var domSnapshot: [FlowyDomNode] = []
+        if let win = window {
+             domSnapshot = FlowyTreeWalker.captureHierarchy(in: win)
+        } else if let win = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) {
+             domSnapshot = FlowyTreeWalker.captureHierarchy(in: win)
+        }
+        
+        // 2. Hybrid Placeholder
+        // The OCR part is triggered via `logVisionInteraction` usually.
+        // If this comes from Swizzling, we have the DOM.
+        
+        let event = FlowyEvent(
+            action: type,
+            ocr_text: nil, // Hybrid matcher would populate this if we had the image here
+            coordinates: touchPoint.map { FlowyEvent.Coordinate(x: Double($0.x), y: Double($0.y)) },
+            screen_name: self.currentScreenName
+        )
+        
+        // Save to storage
+        storage.appendEvent(event)
     }
     
     // Deprecated: interceptAction was related to hierarchy traversal. 

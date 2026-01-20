@@ -21,10 +21,29 @@ class FlowyScreenReader {
     static func deduceScreenName(viewController: UIViewController) -> String {
         let className = String(describing: type(of: viewController))
         
+        // RULE 0: Container Handling (Recursive)
+        // Check if we are inside a container and should ask the child
+        if let split = viewController as? UISplitViewController {
+            // Prefer detail, then primary
+            if let detail = split.viewControllers.last {
+                return deduceScreenName(viewController: detail)
+            }
+        }
+        if let nav = viewController as? UINavigationController {
+            if let top = nav.topViewController {
+                return deduceScreenName(viewController: top)
+            }
+        }
+        if let tab = viewController as? UITabBarController {
+             if let selected = tab.selectedViewController {
+                 return deduceScreenName(viewController: selected)
+             }
+        }
+        
         // RULE 1: Navigation Bar Title (Highest Priority)
         // Check standard title
-        if let title = viewController.title, !title.isEmpty {
-            return title
+        if let title = viewController.title, !title.isEmpty, title != "Back" {
+             return title
         }
         // Check navigation item title
         if let title = viewController.navigationItem.title, !title.isEmpty {
@@ -40,12 +59,15 @@ class FlowyScreenReader {
             return text
         }
         
-        // Extract visible text for heuristic analysis
+        // RULE 1.5: Content Analysis (Heuristics)
         let candidates = extractVisibleText(from: viewController.view)
         
-        // RULE 2: Header (Top-most bold/large label)
-        // Filter candidates that look like headers (bold font or large size inferred, usually top of screen)
-        // We prioritize items with low Y position (top of screen) and "isHeader" flag
+        // 1. Timers
+        let minCount = candidates.filter { $0.text.contains("min") }.count
+        if minCount > 2 {
+            return "Timers List"
+        }
+        
         let headerCandidates = candidates.filter { $0.isHeader }
         if let bestHeader = headerCandidates.sorted(by: { $0.yPosition < $1.yPosition }).first {
             return bestHeader.text

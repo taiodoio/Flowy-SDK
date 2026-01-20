@@ -11,6 +11,15 @@ struct FlowyHeuristics {
         return keywords.contains(where: { text.contains($0) })
     }
     
+    static func isSuccessText(_ text: String?) -> Bool {
+        guard let text = text?.lowercased() else { return false }
+        let keywords = [
+            "success", "saved", "completed", "done", "finished",
+            "successo", "salvato", "fatto", "completato", "terminato"
+        ]
+        return keywords.contains(where: { text.contains($0) })
+    }
+    
     static func cleanScreenName(_ rawName: String) -> String {
         // Remove generic generic wrappers like "UIHostingController<"
         var name = rawName

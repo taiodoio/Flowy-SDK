@@ -52,10 +52,13 @@ extension UIWindow {
         }
         
         // 3. Process Vision
+        // Capture strong ref to window for logging context
+        let windowRef = self
+        
         FlowyVisionEngine.shared.processTap(snapshot: snapshot, tapPoint: tapPoint) { recognizedText in
             if let text = recognizedText {
-                // Log it
-                FlowyLogger.shared.logVisionInteraction(text: text, coordinates: tapPoint)
+                // Log it with window context
+                FlowyLogger.shared.logVisionInteraction(text: text, coordinates: tapPoint, window: windowRef)
                 
                 // 4. Auto-Scan for Dynamic Changes (Toasts etc)
                 // Schedule a scan 1.0s later to see if the UI changed to an Error/Success state
@@ -65,7 +68,7 @@ extension UIWindow {
             } else {
                  // Even if no text, we might want to log "Tap" at coordinates?
                  // For now, let's skip silent taps to reduce noise, OR log generic "Tap"
-                 FlowyLogger.shared.logVisionInteraction(text: "Tap", coordinates: tapPoint)
+                 FlowyLogger.shared.logVisionInteraction(text: "Tap", coordinates: tapPoint, window: windowRef)
             }
             
             UIApplication.shared.endBackgroundTask(bgTask)

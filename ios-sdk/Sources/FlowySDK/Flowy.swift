@@ -24,7 +24,7 @@ public class Flowy {
     // Public API for tracking errors
     public func trackError(description: String) {
         #if canImport(UIKit)
-        FlowyLogger.shared.logInteration(type: "ERROR", element: UIView(), text: description)
+        FlowyLogger.shared.logManualEvent(type: "ERROR", text: description)
         #endif
     }
     

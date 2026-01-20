@@ -5,6 +5,7 @@
 ## 🚀 Features
 
 - **👁️ Vision-Based Tracking**: Captures screen text using Apple's Vision framework. Tapping "Add to Cart" logs "Add to Cart", regardless of the underlying view structure (SwiftUI, UIKit, ReactNative, Flutter).
+- **🧠 Hybrid Analysis**: Combines Vision OCR with the DOM hierarchy to pinpoint exactly which UI element was tapped.
 - **✅ SwiftUI Compatible**: Works seamlessly with SwiftUI Buttons and Gestures via global touch interception.
 - **🛡️ Privacy First**: Automatically skips OCR on secure fields (passwords, credit cards).
 - **🔥 Dynamic State Detection**: Automatically detects transient UI states like **Error Toasts**, Success Messages, or Alerts appearing after an action.

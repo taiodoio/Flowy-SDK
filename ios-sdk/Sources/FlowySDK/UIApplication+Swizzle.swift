@@ -24,7 +24,7 @@ extension UIApplication {
         if let senderView = sender as? UIView {
              if let textField = senderView as? UITextField, textField.isSecureTextEntry {
                  // Log redacted event immediately
-                 FlowyLogger.shared.logVisionInteraction(text: "[SECURE_FIELD]", coordinates: nil)
+                 FlowyLogger.shared.logVisionInteraction(text: "[SECURE_FIELD]", coordinates: nil, window: self.keyWindow)
                  return
              }
         }
@@ -61,7 +61,8 @@ extension UIApplication {
         
         FlowyVisionEngine.shared.processTap(snapshot: snapshot, tapPoint: finalTapPoint) { recognizedText in
             // Back on whatever queue (likely background), send to logger
-            FlowyLogger.shared.logVisionInteraction(text: recognizedText, coordinates: finalTapPoint)
+            // Note: 'window' captured from main thread context above
+            FlowyLogger.shared.logVisionInteraction(text: recognizedText, coordinates: finalTapPoint, window: window)
             
             // Finish task
             self.endBackgroundTask(bgTask)
