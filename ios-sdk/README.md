@@ -99,6 +99,26 @@ Flowy respects user privacy by design:
 
 ---
 
+## 🧠 Hybrid Analysis Engine (DOM + OCR)
+
+Flowy goes beyond simple text recognition. It uses a **Hybrid Pipeline** to understand exactly what the user is interacting with.
+
+### 1. The Tree Walker (`FlowyTreeWalker`)
+When a user interacts with the app, Flowy instantaneously captures a lightweight DOM snapshot of the current UI hierarchy. It filters out invisible or irrelevant views, creating a semantic map of:
+-   **Buttons** (`UIButton`, SwiftUI tap targets)
+-   **Inputs** (`UITextField`, `SecureField`)
+-   **Containers** (`UITableView`, `UICollectionView`)
+
+### 2. The Matcher (`FlowyHybridMatcher`)
+Flowy then combines this DOM structure with Vision OCR results. It uses geometric matching to pair the detected text (e.g., "Login") with the actual UI component (e.g., a specific `UIButton` at coordinates `x,y`).
+
+**Why this matters:**
+-   **Precision**: Distinguishes between a "Label" that happens to say "Login" and an actual "Login Button".
+-   **Context**: Logs internal identifiers (like `accessibilityIdentifier` or class names) alongside the user-visible text.
+-   **Resilience**: Works even if the text is stylized, low-contrast, or part of a complex custom view.
+
+---
+
 ## 📊 Viewing Data
 
 1.  Run your app in the Simulator/Device.
