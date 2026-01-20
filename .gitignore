@@ -8,3 +8,4 @@ build/
 
 # Ignore web folder to protect API keys
 web/
+FlowyTester/
