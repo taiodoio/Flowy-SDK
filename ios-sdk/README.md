@@ -1,35 +1,32 @@
-# FlowySDK (iOS)
+# FlowySDK for iOS
 
-**FlowySDK** is a next-generation analytics tool that "sees" what your users see. Instead of relying on brittle view IDs or manual tagging, Flowy uses **Computer Vision (OCR)** and **AI** to automatically track user flows, interactions, and dynamic UI states (like Toasts/Errors) without invasive code changes.
-
-## 🚀 Features
-
-- **👁️ Vision-Based Tracking**: Captures screen text using Apple's Vision framework. Tapping "Add to Cart" logs "Add to Cart", regardless of the underlying view structure (SwiftUI, UIKit, ReactNative, Flutter).
-- **🧠 Hybrid Analysis**: Combines Vision OCR with the DOM hierarchy to pinpoint exactly which UI element was tapped.
-- **✅ SwiftUI Compatible**: Works seamlessly with SwiftUI Buttons and Gestures via global touch interception.
-- **🛡️ Privacy First**: Automatically skips OCR on secure fields (passwords, credit cards).
-- **🔥 Dynamic State Detection**: Automatically detects transient UI states like **Error Toasts**, Success Messages, or Alerts appearing after an action.
-- **🔋 Background Safe**: Ensures critical events are captured even if the user immediately backgrounds the app.
+**FlowySDK** is a zero-instrumentation session-replay and analytics SDK. It automatically records user flows using **Computer Vision (OCR)**, **compressed screenshots**, and **selective DOM extraction** — no manual tagging needed.
 
 ---
 
-## 📦 Installation
+## Requirements
 
-FlowySDK is distributed as a Swift Package.
-
-### 1. Add Package
-1.  Open your project in Xcode.
-2.  Go to **File > Add Package Dependencies...**
-3.  Enter the repository URL (or local path) of FlowySDK.
-4.  Add `FlowySDK` to your App Target.
+| | Minimum |
+|---|---|
+| iOS | 13.0 |
+| Swift | 5.9 |
+| Xcode | 15.0 |
 
 ---
 
-## 🛠️ Configuration
+## Installation
 
-Initialize the SDK as early as possible in your app lifecycle.
+Add `FlowySDK` via Swift Package Manager in Xcode (**File → Add Package Dependencies…**), paste the repo URL, set **Up to Next Major Version**.
 
-### SwiftUI (`App` Struct)
+> Working from source? Click **Add Local…** and select the `FlowySDK` folder.
+
+---
+
+## Setup
+
+Call `Flowy.configure(apiKey:)` before any UI is presented.
+
+**SwiftUI**
 
 ```swift
 import SwiftUI
@@ -38,19 +35,13 @@ import FlowySDK
 @main
 struct YourApp: App {
     init() {
-        // 🚀 Initialize Flowy
         Flowy.configure(apiKey: "YOUR_API_KEY")
     }
-
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
-    }
+    var body: some Scene { WindowGroup { ContentView() } }
 }
 ```
 
-### UIKit (`AppDelegate`)
+**UIKit**
 
 ```swift
 import UIKit
@@ -58,70 +49,198 @@ import FlowySDK
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
-    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        
-        // 🚀 Initialize Flowy
+    func application(_ app: UIApplication, didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         Flowy.configure(apiKey: "YOUR_API_KEY")
-        
         return true
     }
 }
 ```
 
+Auto-capture starts immediately — nothing else needed.
+
 ---
 
-## 📖 How It Works
-
-1.  **Auto-Capture**: The SDK automatically swizzles `UIWindow` and `UIApplication` to detect every touch.
-2.  **Vision Analysis**: On every tap, it silently captures a snapshot and uses Neural Text Recognition (OCR) to identify the element under the user's finger (e.g., "Checkout", "Settings").
-3.  **Proximity Search**: Precision isn't required. Use smart proximity search to match icons to nearby text labels.
-4.  **Logging**: Data is stored locally in `flowy_session.json` (Documents directory) and persisted across sessions.
-
-### Manual Logging (Optional)
-
-While Flowy is automated, you can manually log custom errors or screens if needed:
+## Export
 
 ```swift
-// Force log a specific error
+Flowy.shared.exportSession()
+```
+
+Creates `Documents/flowy_session_<timestamp>.json` — events + wireframes + screenshots in a single file. Individual part files are deleted on success.
+
+---
+
+## Retrieve the bundle
+
+**Via Xcode (no setup required)**
+
+Xcode → Window → Devices and Simulators → select device → gear icon → **Download Container…** → open `.xcappdata` → Show Package Contents → `AppData/Documents/`.
+
+**Via Files app (requires Info.plist entries)**
+
+| Key | Type | Value |
+|---|---|---|
+| `UIFileSharingEnabled` | Boolean | YES |
+| `LSSupportsOpeningDocumentsInPlace` | Boolean | YES |
+
+Add these to the **host app's** Info.plist (not the SDK). The bundle then appears in Files → On My iPhone → [App Name].
+
+---
+
+## Automatic capture
+
+Once `Flowy.configure` is called, the SDK records:
+
+| Event | Trigger | Capture |
+|---|---|---|
+| `SCREEN` | Every `viewDidAppear` | Screenshot + visual-diff dedup (t+0.3 s) |
+| `TAP` | Touch end on key window | OCR + screenshot + **full DOM** (t+0.8 s, `forceFullExtraction: true`) |
+| `SCROLL` | Swipe > 12 pt displacement | Screenshot (t+0.5 s, `forceFullExtraction: true`) |
+| `ERROR` / `SUCCESS` post-tap | 1.5 s after each tap — OCR scan | Screenshot + **full DOM** if text matched |
+| `ERROR` / `SUCCESS` passive | New view added to key window | Screenshot + **full DOM** immediately (debounce 0.9 s) |
+| `SECURE_TAP` | Tap on a secure field | Coordinates only — no text captured |
+
+---
+
+## Manual API
+
+```swift
+// Log a custom error
 Flowy.shared.trackError(description: "Payment Gateway Timeout")
 
-// Force log a specific screen view
+// Log a screen manually (useful for non-UIViewController screens)
 Flowy.shared.trackScreen(name: "CheckoutWebView")
+
+// Capture wireframe — full DOM extraction
+Flowy.shared.captureWireframe(screenName: "OnboardingStep2")
+
+// Capture wireframe — attach existing screenshot, skip DOM extraction (lightweight)
+Flowy.shared.captureWireframe(screenName: "OnboardingStep2", screenshotBase64: base64String)
+
+// Force full DOM extraction even when screenshot is attached
+Flowy.shared.captureWireframe(screenName: "OnboardingStep2", screenshotBase64: base64String, forceFullExtraction: true)
+
+// Export — keep individual wireframe files after merge (default: false)
+Flowy.shared.exportSession(deleteWireframeParts: false)
 ```
 
 ---
 
-## 🔒 Privacy
+## Session bundle format
 
-Flowy respects user privacy by design:
-- **Secure Fields**: Taps on `SecureField` (passwords) are redacted (`[SECURE_FIELD]`).
-- **Local Processing**: OCR happens on-device using Apple's Vision framework.
+### Event
+
+```json
+{
+  "action": "TAP",
+  "ocr_text": "Add to Cart [UIButton]",
+  "coordinates": { "x": 195.0, "y": 720.0 },
+  "screen_name": "Product Detail",
+  "timestamp": 1711234567.89,
+  "deviceInfo": { "model": "iPhone", "osVersion": "17.4" }
+}
+```
+
+| `action` | Meaning |
+|---|---|
+| `SCREEN` | Screen became visible |
+| `TAP` | Tap with OCR-identified text |
+| `SECURE_TAP` | Tap on a password field (text redacted) |
+| `SCROLL` | Scroll gesture > 12 pt; post-scroll screenshot follows |
+| `ERROR` | Error text detected on screen |
+| `SUCCESS` | Success/confirmation text detected |
+
+### Wireframe entry
+
+```json
+{
+  "screen_name": "dashboard_3",
+  "captured_at": 1711234568.12,
+  "tree": {
+    "class_name": "Button",
+    "frame": { "x": 16, "y": 740, "width": 358, "height": 50 },
+    "text": "Continue",
+    "children": null
+  },
+  "screenshot_base64": "<base64 JPEG>"
+}
+```
+
+| Field | Description |
+|---|---|
+| `screen_name` | Sequential label — ordering only, not identity |
+| `captured_at` | Unix timestamp (seconds) of capture |
+| `tree` | Full view tree (key events) or placeholder node (passive captures) |
+| `screenshot_base64` | JPEG at 40% scale, ~18–30 KB. Present for all automatic captures |
+
+When `screenshot_base64` is present, the dashboard renders it as the visual background with heatmap overlay. When absent, wireframe rectangles are drawn from the `tree`.
 
 ---
 
-## 🧠 Hybrid Analysis Engine (DOM + OCR)
+## Capture pipeline
 
-Flowy goes beyond simple text recognition. It uses a **Hybrid Pipeline** to understand exactly what the user is interacting with.
+```
+Touch ends on UIWindow
+  │
+  ├─ UIGraphicsImageRenderer snapshot (main thread)      → OCR input
+  ├─ Vision OCR (background) → text + FlowyHeuristics
+  ├─ ViewHierarchyExtractor (main thread)                → full DOM on TAP/ERROR/SUCCESS
+  ├─ FlowyScreenshotCapture                              → compressed JPEG, always
+  └─ Visual-diff dedup (passive only: skip if size delta < 8%)
+```
 
-### 1. The Tree Walker (`FlowyTreeWalker`)
-When a user interacts with the app, Flowy instantaneously captures a lightweight DOM snapshot of the current UI hierarchy. It filters out invisible or irrelevant views, creating a semantic map of:
--   **Buttons** (`UIButton`, SwiftUI tap targets)
--   **Inputs** (`UITextField`, `SecureField`)
--   **Containers** (`UITableView`, `UICollectionView`)
+### Key timing constants
 
-### 2. The Matcher (`FlowyHybridMatcher`)
-Flowy then combines this DOM structure with Vision OCR results. It uses geometric matching to pair the detected text (e.g., "Login") with the actual UI component (e.g., a specific `UIButton` at coordinates `x,y`).
+All delay values live in `FlowyLogger.swift` and `UIView+SubviewObserver.swift`. See [`TUNING.md`](./TUNING.md) for the full table and how to adjust them.
 
-**Why this matters:**
--   **Precision**: Distinguishes between a "Label" that happens to say "Login" and an actual "Login Button".
--   **Context**: Logs internal identifiers (like `accessibilityIdentifier` or class names) alongside the user-visible text.
--   **Resilience**: Works even if the text is stylized, low-contrast, or part of a complex custom view.
+| Constant | Default | File |
+|---|---|---|
+| `tapCaptureDelay` | 0.8 s | `FlowyLogger.swift` |
+| `scrollCaptureDelay` | 0.5 s | `FlowyLogger.swift` |
+| `passiveScreenCaptureDelay` | 0.3 s | `FlowyLogger.swift` |
+| `suppressPassiveCaptureAfterTapWindow` | 1.0 s | `FlowyLogger.swift` |
+| Capture rate-limit (throttle) | 1.0 s | `FlowyLogger.swift` |
+| Passive scan debounce | 0.9 s | `UIView+SubviewObserver.swift` |
+| Passive scan minimum interval | 1.8 s | `UIView+SubviewObserver.swift` |
+
+### Screenshot quality
+
+| Parameter | Normal profile | Safe profile | File |
+|---|---|---|---|
+| `scaleFactor` | 0.40 | 0.30 | `FlowyScreenshotCapture.swift` |
+| `jpegQuality` | 0.40 | 0.35 | `FlowyScreenshotCapture.swift` |
+| Visual-diff dedup threshold | 8% | — | `FlowyLogger.swift` |
+
+`normal` is the default. `safe` is switched to automatically under bursty activity. Call `FlowyScreenshotCapture.setQualityProfile(.safe)` to force it.
+
+### Wireframe matching (dashboard)
+
+The dashboard matches each event to a wireframe by **timestamp proximity**:
+
+1. **TAP / SCROLL** → prefer wireframe captured ≤5 s *after* the event (destination screen after navigation). If none, widen to ≤10 s after.
+2. **SCREEN / ERROR / SUCCESS** → prefer wireframe captured ≤10 s *before* the event.
+3. Fallback: globally closest wireframe by timestamp.
+4. Last resort: fuzzy screen-name match.
 
 ---
 
-## 📊 Viewing Data
+## Privacy
 
-1.  Run your app in the Simulator/Device.
-2.  Interact with it (Tap buttons, trigger errors).
-3.  Retrieve the `flowy_session.json` log from the app's Documents directory.
-4.  Upload it to the **Flowy Web Dashboard** to see the visualized user journey node graph.
+| Concern | Handling |
+|---|---|
+| Passwords | Secure fields logged as `[SECURE_FIELD]` — no text captured |
+| On-device processing | All OCR runs on-device via Apple Vision. No images sent during capture |
+| Screenshots | Stored locally; only transmitted when you manually upload the bundle |
+| DOM tree | Contains view structure and visible text only |
+
+---
+
+## Troubleshooting
+
+**Screens still as splash screen** — `Flowy.configure` called too late. Move it before the first `viewDidAppear`.
+
+**Wrong screenshot in dashboard** — Upload the full `flowy_session_*.json`. The dashboard needs `captured_at` timestamps to do timestamp-based matching.
+
+**"No key window found"** — `captureWireframe()` called before window hierarchy was ready. Use `viewDidAppear` or `.onAppear`.
+
+**Files not visible in Files app** — Both `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` must be `YES` in the **host app's** `Info.plist`.
