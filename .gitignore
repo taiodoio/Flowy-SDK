@@ -6,6 +6,8 @@ build/
 .env
 .env.local
 
-# Ignore web folder to protect API keys
-web/
+# Keep local dashboard secrets and captured sessions out of git.
+web/.env*
+web/data/sessions/*.json
+
 FlowyTester/

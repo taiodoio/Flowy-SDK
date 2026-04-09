@@ -10,6 +10,9 @@ class FlowyScreenReader {
     private static let MAX_DEPTH = 15
     private static let MAX_CANDIDATES = 30 // Avoid processing too many texts
     
+    // Context: Stores the last tapped menu item (e.g. from TabBar)
+    public static var lastMenuContext: (name: String, timestamp: Date)?
+    
     struct TextCandidate {
         let text: String
         let yPosition: CGFloat
@@ -35,9 +38,9 @@ class FlowyScreenReader {
             }
         }
         if let tab = viewController as? UITabBarController {
-             if let selected = tab.selectedViewController {
-                 return deduceScreenName(viewController: selected)
-             }
+            if let selected = tab.selectedViewController {
+                return deduceScreenName(viewController: selected)
+            }
         }
         
         // RULE 1: Navigation Bar Title (Highest Priority)
@@ -59,17 +62,23 @@ class FlowyScreenReader {
             return text
         }
         
-        // RULE 1.5: Content Analysis (Heuristics)
-        let candidates = extractVisibleText(from: viewController.view)
-        
-        // 1. Timers
-        let minCount = candidates.filter { $0.text.contains("min") }.count
-        if minCount > 2 {
-            return "Timers List"
+        // RULE 1.5: Sticky Context (Last Tapped Menu)
+        // If we have a recent menu tap (within 5 seconds) and no better title, use it.
+        if let context = lastMenuContext, Date().timeIntervalSince(context.timestamp) < 5.0 {
+            return context.name
         }
         
-        let headerCandidates = candidates.filter { $0.isHeader }
-        if let bestHeader = headerCandidates.sorted(by: { $0.yPosition < $1.yPosition }).first {
+        // RULE 2: Content Analysis (Heuristics) - Smart Header Scan
+        let candidates = extractVisibleText(from: viewController.view)
+        
+        // Filter for "Top Headers": Large text in the top 25% of the screen
+        let screenHeight = viewController.view.bounds.height
+        let topHeaderCandidates = candidates.filter { candidate in
+            return candidate.isHeader && candidate.yPosition < (screenHeight * 0.25)
+        }
+        
+        // Pick the topmost header
+        if let bestHeader = topHeaderCandidates.sorted(by: { $0.yPosition < $1.yPosition }).first {
             return bestHeader.text
         }
         
@@ -81,18 +90,6 @@ class FlowyScreenReader {
             if keywords.contains(where: { candidate.text.caseInsensitiveCompare($0) == .orderedSame }) {
                 return candidate.text
             }
-        }
-        
-        // Look for partial matches if no exact match
-        for candidate in candidates {
-             if keywords.contains(where: { candidate.text.localizedCaseInsensitiveContains($0) }) {
-                 // Return the Keyword, not the whole text, to keep it clean? Or the text?
-                 // User said "Use those", implying the keyword or the text containing it.
-                 // Let's return the candidate text if it's short (likely a button title or header)
-                 if candidate.text.count < 30 {
-                     return candidate.text
-                 }
-             }
         }
         
         // RULE 4: Fallback (Class Name)

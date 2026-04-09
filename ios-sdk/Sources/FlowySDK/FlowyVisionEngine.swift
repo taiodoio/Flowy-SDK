@@ -85,7 +85,11 @@ class FlowyVisionEngine: @unchecked Sendable {
             request.usesLanguageCorrection = true
             
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            try? handler.perform([request])
+            do {
+                try handler.perform([request])
+            } catch {
+                completion(nil)
+            }
         }
     }
 
@@ -107,7 +111,11 @@ class FlowyVisionEngine: @unchecked Sendable {
             }
             request.recognitionLevel = .fast
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            try? handler.perform([request])
+            do {
+                try handler.perform([request])
+            } catch {
+                completion([])
+            }
         }
     }
 }

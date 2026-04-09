@@ -5,8 +5,10 @@ struct FlowyHeuristics {
         guard let text = text?.lowercased() else { return false }
         // Added Italian keywords for "A Tavola" app
         let keywords = [
-            "error", "failed", "failure", "wrong", "denied", "forbidden", "fatal", "exception",
-            "errore", "fallito", "non trovato", "invalido", "riprova", "attenzione", "vietato"
+            "error", "failed", "failure", "wrong", "denied", "forbidden", "fatal", "exception", "offline", "connection lost",
+            "timeout", "timed out", "request timeout", "network timeout", "session expired",
+            "errore", "fallito", "non trovato", "invalido", "riprova", "attenzione", "vietato", "offline", "connessione assente",
+            "tempo scaduto", "sessione scaduta", "richiesta scaduta"
         ]
         return keywords.contains(where: { text.contains($0) })
     }
@@ -14,9 +16,12 @@ struct FlowyHeuristics {
     static func isSuccessText(_ text: String?) -> Bool {
         guard let text = text?.lowercased() else { return false }
         let keywords = [
-            "success", "saved", "completed", "done", "finished",
-            "successo", "salvato", "fatto", "completato", "terminato"
+            "success", "saved", "completed", "done", "finished", "sent", "created", "confirmed", "great",
+            "successo", "salvato", "fatto", "completato", "terminato", "inviato", "creato", "confermato", "ottimo", "ok"
         ]
+        // Exact match for very short words like "OK" to avoid false positives
+        if text == "ok" || text == "done" { return true }
+        
         return keywords.contains(where: { text.contains($0) })
     }
     
