@@ -176,7 +176,7 @@ export function SessionReplay({ session }: SessionReplayProps) {
               containerWidth={220}
               containerHeight={480}
               tapOverlay={tapCoords ?? null}
-              screenshotBase64={currentWireframe.screenshotBase64}
+              screenshotBase64={currentWireframe.screenshotBase64 ?? (currentWireframe as any).screenshot_base64}
             />
           ) : (
             <div className="w-[220px] h-[480px] rounded-xl border border-white/10 bg-slate-950 flex flex-col items-center justify-center gap-2 text-slate-500">

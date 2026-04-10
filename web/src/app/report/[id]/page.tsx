@@ -6,7 +6,7 @@ import { AnalysisReport } from "@/components/analysis-report"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { ArrowLeft, RefreshCcw, Tag as TagIcon, FileJson, UploadCloud } from "lucide-react"
+ import { ArrowLeft, RefreshCcw, Tag as TagIcon, FileJson, UploadCloud, Zap } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
@@ -81,7 +81,9 @@ export default function SessionReportPage() {
     const [session, setSession] = useState<any>(null)
     const [loading, setLoading] = useState(true)
     const [analyzing, setAnalyzing] = useState(false)
+    const [analyzingLocal, setAnalyzingLocal] = useState(false)
     const [analyzeError, setAnalyzeError] = useState<{ message: string; retryIn?: number | null } | null>(null)
+    const [analyzeErrorLocal, setAnalyzeErrorLocal] = useState<{ message: string } | null>(null)
     const [error, setError] = useState<string | null>(null)
 
     // Robust ID extraction from URL
@@ -153,6 +155,7 @@ export default function SessionReportPage() {
         if (!id) return;
         setAnalyzing(true)
         setAnalyzeError(null)
+        setAnalyzeErrorLocal(null)
         try {
             const res = await fetch("/api/analyze", {
                 method: "POST",
@@ -180,7 +183,7 @@ export default function SessionReportPage() {
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ report: data })
+                body: JSON.stringify({ report: data, analyzedBy: 'remote' })
             })
             const savedSession = await saveRes.json()
             if (!saveRes.ok) {
@@ -194,6 +197,59 @@ export default function SessionReportPage() {
             setAnalyzeError({ message: e.message || "Unknown error" })
         } finally {
             setAnalyzing(false)
+        }
+    }
+
+    const handleAnalyzeLocal = async () => {
+        if (!id) return;
+        setAnalyzingLocal(true)
+        setAnalyzeErrorLocal(null)
+        setAnalyzeError(null)
+
+        // Quick Ollama health check
+        try {
+            const healthRes = await fetch("http://localhost:11434/api/tags", { signal: AbortSignal.timeout(3000) })
+            if (!healthRes.ok) throw new Error("Ollama health check failed")
+        } catch (e: any) {
+            setAnalyzingLocal(false)
+            setAnalyzeErrorLocal({
+                message: "Ollama non è raggiungibile. Verifica che sia in esecuzione su localhost:11434."
+            })
+            return
+        }
+
+        try {
+            const res = await fetch("/api/analyze-local", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(session)
+            })
+            const data = await res.json()
+
+            if (!res.ok || data.error) {
+                setAnalyzeErrorLocal({ message: data.error || "Local analysis request failed" })
+                return
+            }
+
+            const saveRes = await fetch(`/api/sessions/${id}`, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ report: data, analyzedBy: 'local' })
+            })
+            const savedSession = await saveRes.json()
+            if (!saveRes.ok) {
+                throw new Error(savedSession?.error || "Failed to persist generated local report")
+            }
+
+            setSession(savedSession)
+            toast.success("Local report generated & saved")
+        } catch (e: any) {
+            console.error("Full Local Analysis Error:", e)
+            setAnalyzeErrorLocal({ message: e.message || "Unknown local error" })
+        } finally {
+            setAnalyzingLocal(false)
         }
     }
 
@@ -281,7 +337,7 @@ export default function SessionReportPage() {
                             <Button
                                 size="lg"
                                 onClick={handleAnalyze}
-                                disabled={analyzing}
+                                disabled={analyzing || analyzingLocal}
                                 className="w-full max-w-sm bg-gradient-to-r from-purple-600 to-indigo-600 shadow-xl shadow-purple-500/20 py-6 text-lg"
                             >
                                 {analyzing ? (
@@ -302,6 +358,28 @@ export default function SessionReportPage() {
                                     ) : (
                                         <p className="text-red-400/70 text-xs">Controlla la console del browser per i dettagli tecnici.</p>
                                     )}
+                                </div>
+                            )}
+                            <Button
+                                size="lg"
+                                onClick={handleAnalyzeLocal}
+                                disabled={analyzing || analyzingLocal}
+                                className="w-full max-w-sm bg-gradient-to-r from-amber-600 to-orange-600 shadow-xl shadow-orange-500/20 py-6 text-lg"
+                            >
+                                {analyzingLocal ? (
+                                    <>
+                                        <RefreshCcw className="mr-2 h-5 w-5 animate-spin" /> Analisi locale in corso…
+                                    </>
+                                ) : (
+                                    <>
+                                        <RefreshCcw className="mr-2 h-5 w-5" /> Local AI (Ollama)
+                                    </>
+                                )}
+                            </Button>
+                            {analyzeErrorLocal && (
+                                <div className="max-w-sm mx-auto mt-4 p-4 rounded-xl border border-orange-500/30 bg-orange-500/10 text-left space-y-1">
+                                    <p className="text-orange-200 text-sm font-medium">{analyzeErrorLocal.message}</p>
+                                    <p className="text-orange-300/80 text-xs">Verifica che Ollama sia avviato su localhost:11434 e che il modello gemma4:e4b sia installato.</p>
                                 </div>
                             )}
                         </div>
@@ -325,6 +403,18 @@ export default function SessionReportPage() {
                                         <div className="flex justify-between items-center">
                                             <span className="text-sm text-slate-400">Screens</span>
                                             <span className="font-medium text-white">{session.report.stats?.screens_visited?.length || "-"}</span>
+                                        </div>
+                                        <Separator className="bg-white/10" />
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-sm text-slate-400 flex items-center gap-1">
+                                                <Zap className="w-3.5 h-3.5" /> AI Model
+                                            </span>
+                                            <Badge variant="outline" className={session.analyzedBy === 'local'
+                                                ? "bg-orange-500/10 text-orange-300 border-orange-500/30 text-xs"
+                                                : "bg-indigo-500/10 text-indigo-300 border-indigo-500/30 text-xs"}
+                                            >
+                                                {session.analyzedBy === 'local' ? 'gemma4:e4b' : 'Gemini'}
+                                            </Badge>
                                         </div>
                                     </div>
                                 </div>

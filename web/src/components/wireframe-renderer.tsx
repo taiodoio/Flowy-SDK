@@ -104,6 +104,8 @@ export function WireframeRenderer({
 
   const renderedW = deviceW * scale;
   const renderedH = deviceH * scale;
+  const normalizedScreenshotBase64 = (screenshotBase64 ?? '').replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '');
+  const hasScreenshot = normalizedScreenshotBase64.length > 0;
 
   return (
     <div
@@ -111,9 +113,9 @@ export function WireframeRenderer({
       style={{ width: renderedW, height: renderedH, flexShrink: 0 }}
     >
       {/* Screenshot layer — shown at high opacity when available; wireframe nodes are skipped */}
-      {screenshotBase64 && (
+      {hasScreenshot && (
         <img
-          src={`data:image/jpeg;base64,${screenshotBase64}`}
+          src={`data:image/jpeg;base64,${normalizedScreenshotBase64}`}
           className="absolute inset-0 w-full h-full object-cover"
           style={{ opacity: 0.92 }}
           alt="screen capture"
@@ -122,7 +124,7 @@ export function WireframeRenderer({
 
       {/* Wireframe nodes — only rendered when no screenshot is available */}
       <div className="absolute inset-0">
-        {!screenshotBase64 && renderNode(rootNode, scale, 0)}
+        {!hasScreenshot && renderNode(rootNode, scale, 0)}
       </div>
 
       {/* Heatmap SVG overlay */}

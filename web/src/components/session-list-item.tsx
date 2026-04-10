@@ -42,9 +42,19 @@ export function SessionListItem({ session, onToggleApproval, onDelete }: Session
                             {session.id?.substring(0, 8) || "NO-ID"}...
                         </span>
                         {isAnalyzed ? (
-                            <Badge variant="secondary" className="bg-green-500/10 text-green-400 border-green-500/20 text-xs gap-1">
-                                <CheckCircle className="w-3 h-3" /> Analyzed
-                            </Badge>
+                            <>
+                                <Badge variant="secondary" className="bg-green-500/10 text-green-400 border-green-500/20 text-xs gap-1">
+                                    <CheckCircle className="w-3 h-3" /> Analyzed
+                                </Badge>
+                                <Badge
+                                    variant="secondary"
+                                    className={session.analyzedBy === 'local'
+                                        ? "bg-orange-500/10 text-orange-300 border-orange-500/30 text-[10px]"
+                                        : "bg-indigo-500/10 text-indigo-300 border-indigo-500/30 text-[10px]"}
+                                >
+                                    {session.analyzedBy === 'local' ? 'Local AI' : 'Cloud AI'}
+                                </Badge>
+                            </>
                         ) : (
                             <Badge variant="secondary" className="bg-slate-500/10 text-slate-400 border-slate-500/20 text-xs gap-1">
                                 <Clock className="w-3 h-3" /> Pending

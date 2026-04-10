@@ -1,19 +1,15 @@
-import { GoogleGenerativeAI, type Part } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 
-// Allow up to 90 s for multimodal Gemini calls (free tier can be slow)
-export const maxDuration = 90;
+export const maxDuration = 120;
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
+const OLLAMA_URL = "http://localhost:11434/api/chat";
+const OLLAMA_MODEL = "gemma4:e4b";
 
 function formatTimestamp(ts: number): string {
   const d = new Date(ts > 1e10 ? ts : ts * 1000);
   return d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-/** Strip trailing sequence number and underscores for a readable label */
 function humanizeWireframeName(raw: string): string {
   if (!raw) return "Schermata";
   return raw.replace(/_\d+$/, "").replace(/_/g, " ").trim() || "Schermata";
@@ -24,7 +20,6 @@ function normalizeBase64Image(raw?: string): string {
   return raw.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "").trim();
 }
 
-/** Find the 1-based index of the most relevant wireframe for an event. */
 function findShotIndex(event: any, wireframes: any[], wfMap: Map<any, number>): number | null {
   const ts: number = event.timestamp || event.captured_at || 0;
   if (!ts) return null;
@@ -34,9 +29,6 @@ function findShotIndex(event: any, wireframes: any[], wfMap: Map<any, number>): 
 
   const cat = (w: any) => w.capturedAt || w.captured_at || 0;
   const withTime = wireframes.filter((w) => cat(w) > 0);
-
-  const closest = (arr: any[], reducer: (a: any, b: any) => any) =>
-    arr.length ? reducer : null;
 
   if (prefersAfter) {
     const tight = withTime.filter((w) => cat(w) > ts && cat(w) - ts <= 5);
@@ -52,35 +44,26 @@ function findShotIndex(event: any, wireframes: any[], wfMap: Map<any, number>): 
   const after = withTime.filter((w) => cat(w) > ts && cat(w) - ts <= 10);
   if (after.length) return wfMap.get(after.reduce((a, b) => (cat(a) < cat(b) ? a : b))) ?? null;
 
-  if (withTime.length)
+  if (withTime.length) {
     return wfMap.get(withTime.reduce((a, b) => (Math.abs(cat(a) - ts) < Math.abs(cat(b) - ts) ? a : b))) ?? null;
+  }
 
   return null;
 }
-
-// ── Route ─────────────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
   try {
     const session = await req.json();
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: "Gemini API Key missing" }, { status: 500 });
-    }
-
-    // ── 1. Pre-process session ────────────────────────────────────────────────
-
     const wireframes: any[] = [...(session.wireframes || [])].sort(
       (a, b) => (a.capturedAt || a.captured_at || 0) - (b.capturedAt || b.captured_at || 0)
     );
 
-    // 1-based index map for prompt references (S1, S2, …)
     const wfMap = new Map<any, number>();
     wireframes.forEach((wf, i) => wfMap.set(wf, i + 1));
 
     const events: any[] = session.events || [];
 
-    // Compact event timeline — strip large fields, add screenshot reference
     const timeline = events.map((e: any, idx: number) => {
       const shotIdx = findShotIndex(e, wireframes, wfMap);
       const ocr = (e.ocr_text || "").trim();
@@ -94,69 +77,40 @@ export async function POST(req: Request) {
       };
     });
 
-    // ── 2. Select screenshots (deduplicated, max 5) ─────────────────────────
-    // Send at most MAX_SCREENSHOTS visually distinct frames to keep token count
-    // well within the free-tier per-minute limit (~4000 input tokens).
-    // Dedup by base64 prefix (first 40 chars ≈ same image if captured in same second).
     const MAX_SCREENSHOTS = 5;
     const allWithScreenshot = wireframes.filter((wf) => wf.screenshotBase64 || wf.screenshot_base64);
     const seen = new Set<string>();
     const screenshots: any[] = [];
+
     for (const wf of allWithScreenshot) {
       const b64 = normalizeBase64Image(wf.screenshotBase64 || wf.screenshot_base64 || "");
-      const key = b64.substring(0, 40); // same first 40 chars → visually identical
+      if (!b64) continue;
+      const key = b64.substring(0, 40);
       if (!seen.has(key)) {
         seen.add(key);
         screenshots.push(wf);
       }
       if (screenshots.length >= MAX_SCREENSHOTS) break;
     }
+
     const hasScreenshots = screenshots.length > 0;
 
-    // Rebuild wfMap to reference only the deduplicated set
     const shotMap = new Map<any, number>();
     screenshots.forEach((wf, i) => shotMap.set(wf, i + 1));
 
-    // Remap timeline shot references to the deduplicated set
     const timelineWithShots = timeline.map((row) => {
       if (!row.shot) return row;
-      // Find original wireframe that had this index in the full wfMap
       const origIdx = parseInt((row.shot as string).replace("S", ""), 10) - 1;
       const origWf = wireframes[origIdx];
       const newIdx = origWf ? shotMap.get(origWf) : undefined;
       return { ...row, shot: newIdx ? `S${newIdx}` : undefined };
     });
 
-    // ── 3. Resolve models ────────────────────────────────────────────────────
-    // Prefer gemini-2.5-flash (available on free tier, supports multimodal + JSON mode).
-    // gemini-1.5-* has been removed from v1beta; gemini-2.0-flash can hit RPM limits.
-    const HARDCODED_FIRST = ["gemini-2.5-flash", "gemini-2.0-flash"];
-
-    let availableModels: string[] = [];
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`
-      );
-      const data = await res.json();
-      if (data.models) availableModels = data.models.map((m: any) => m.name as string);
-    } catch {}
-
-    const modelsToTry: string[] = [...HARDCODED_FIRST];
-    // Append any API-listed models that support generateContent and aren't already listed
-    const extraPatterns = ["gemini-2.5-", "gemini-2.0-flash"];
-    for (const p of extraPatterns) {
-      for (const m of availableModels) {
-        const cleaned = m.replace("models/", "");
-        if (!modelsToTry.includes(cleaned) && cleaned.startsWith(p)) modelsToTry.push(cleaned);
-      }
-    }
-
-    console.log("[ANALYZE] Models to try:", modelsToTry);
-
-    // ── 4. Build multimodal prompt ────────────────────────────────────────────
-
     const screenshotSummary = screenshots
-      .map((wf, i) => `  S${i + 1}: "${humanizeWireframeName(wf.screenName || wf.screen_name)}" @ ${formatTimestamp(wf.capturedAt || wf.captured_at || 0)}`)
+      .map(
+        (wf, i) =>
+          `  S${i + 1}: "${humanizeWireframeName(wf.screenName || wf.screen_name)}" @ ${formatTimestamp(wf.capturedAt || wf.captured_at || 0)}`
+      )
       .join("\n");
 
     const systemText = `Sei un Senior QA Engineer e CX Analyst specializzato in app mobile iOS.
@@ -262,101 +216,79 @@ Produci un'analisi forense completa della sessione. Restituisci SOLO un oggetto 
 
 7. **MAESTRO**: YAML reale ed eseguibile. Copri tutto il flusso dall'avvio dell'app allo stato finale.`;
 
-    // Assemble multimodal parts
-    const parts: Part[] = [{ text: systemText }];
+    const images = screenshots
+      .map((wf) => normalizeBase64Image(wf.screenshotBase64 || wf.screenshot_base64))
+      .filter((img) => img.length > 0);
 
-    if (hasScreenshots) {
-      for (let i = 0; i < screenshots.length; i++) {
-        const wf = screenshots[i];
-        const name = humanizeWireframeName(wf.screenName || wf.screen_name || "");
-        const time = formatTimestamp(wf.capturedAt || wf.captured_at || 0);
-        parts.push({ text: `\nS${i + 1} — "${name}" @ ${time}:` });
-        const imageData = normalizeBase64Image(wf.screenshotBase64 || wf.screenshot_base64);
-        if (!imageData) continue;
-        parts.push({
-          inlineData: {
-            mimeType: "image/jpeg",
-            data: imageData,
-          },
-        });
-      }
-    }
+    const userText = hasScreenshots
+      ? `Riferimenti screenshot disponibili: ${screenshots
+          .map((wf, i) => `S${i + 1}="${humanizeWireframeName(wf.screenName || wf.screen_name || "")}"`)
+          .join(", ")}\n\n${taskText}`
+      : taskText;
 
-    parts.push({ text: taskText });
-
-    // ── 5. Call model with fallback ───────────────────────────────────────────
-
-    /** Extract seconds from a Gemini 429 message ("retry in 58s" / "retryDelay:58s") */
-    function parseRetrySeconds(msg: string): number | null {
-      const m = msg.match(/(\d+)(?:\.\d+)?s[\s"}\]]/) || msg.match(/retry[^\d]*(\d+)/);
-      return m ? parseInt(m[1], 10) : null;
-    }
-
-    const errors: string[] = [];
-
-    for (const modelName of modelsToTry) {
-      try {
-        console.log(`[ANALYZE] Trying ${modelName} (${hasScreenshots ? "multimodal" : "text-only"})`);
-        const model = genAI.getGenerativeModel({
-          model: modelName,
-          generationConfig: { responseMimeType: "application/json" },
-        });
-
-        const result = await model.generateContent({
-          contents: [{ role: "user", parts }],
-        });
-
-        let text = result.response.text();
-        text = text.replace(/```json/gi, "").replace(/```/g, "").trim();
-        const first = text.indexOf("{");
-        const last = text.lastIndexOf("}");
-        if (first !== -1 && last !== -1) text = text.substring(first, last + 1);
-
-        const json = JSON.parse(text);
-        console.log(`[ANALYZE] Success with ${modelName}`);
-        return NextResponse.json(json);
-      } catch (error: any) {
-        const msg: string = error.message || "";
-        console.warn(`[ANALYZE] Failed with ${modelName}: ${msg.substring(0, 120)}`);
-        errors.push(`${modelName}: ${msg.substring(0, 200)}`);
-
-        // 429 quota exhausted — all models share the same project quota so
-        // there's no point trying the rest. Return a clear actionable message.
-        const msgLow = msg.toLowerCase();
-        if (msgLow.includes("429") || msgLow.includes("too many requests") || msgLow.includes("quota")) {
-          const retryIn = parseRetrySeconds(msg);
-          const retryHint = retryIn
-            ? ` Riprova tra ${retryIn} secondi.`
-            : " Riprova tra qualche minuto.";
-          return NextResponse.json(
+    let ollamaResponse: Response;
+    try {
+      ollamaResponse = await fetch(OLLAMA_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: OLLAMA_MODEL,
+          stream: false,
+          format: "json",
+          messages: [
+            { role: "system", content: systemText },
             {
-              error: `Quota API Gemini esaurita.${retryHint} Se il problema persiste, verifica il piano su https://ai.dev/rate-limit.`,
-              quota_exhausted: true,
-              retry_in_seconds: retryIn,
+              role: "user",
+              content: userText,
+              images,
             },
-            { status: 429 }
-          );
-        }
-
-        // Vision error — strip images and continue with remaining models text-only
-        if (msg.includes("image") || msg.includes("vision")) {
-          console.warn("[ANALYZE] Vision error — retrying remaining models text-only");
-          const systemPart = parts[0];
-          const taskPart = parts[parts.length - 1];
-          parts.length = 0;
-          parts.push(systemPart, taskPart);
-        }
+          ],
+        }),
+      });
+    } catch (error: any) {
+      const message = String(error?.message || "").toLowerCase();
+      if (message.includes("econnrefused") || message.includes("fetch failed") || message.includes("network")) {
+        return NextResponse.json(
+          {
+            error: "Ollama non raggiungibile. Assicurati che sia in esecuzione su localhost:11434 e che il modello gemma4:e4b sia disponibile.",
+          },
+          { status: 503 }
+        );
       }
+      return NextResponse.json({ error: `Errore chiamando Ollama: ${error?.message || "Unknown"}` }, { status: 500 });
     }
 
+    const ollamaData = await ollamaResponse.json();
+
+    if (!ollamaResponse.ok) {
+      return NextResponse.json(
+        { error: ollamaData?.error || `Ollama returned status ${ollamaResponse.status}` },
+        { status: ollamaResponse.status }
+      );
+    }
+
+    let text = (ollamaData?.message?.content || "").trim();
+    text = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+    const first = text.indexOf("{");
+    const last = text.lastIndexOf("}");
+    if (first !== -1 && last !== -1) text = text.substring(first, last + 1);
+
+    try {
+      const json = JSON.parse(text);
+      return NextResponse.json(json);
+    } catch {
+      return NextResponse.json(
+        {
+          error: "Risposta locale non valida (JSON malformato).",
+          raw: text.substring(0, 1500),
+        },
+        { status: 500 }
+      );
+    }
+  } catch (error: any) {
     return NextResponse.json(
-      { error: `All models failed. Details: ${JSON.stringify(errors)}` },
+      { error: `Analisi locale fallita: ${error?.message || "Unknown Error"}` },
       { status: 500 }
     );
-  } catch (error: any) {
-    console.error("[ANALYZE] Fatal error:", error);
-    return NextResponse.json({ error: `Analysis Failed: ${error.message || "Unknown Error"}` }, { status: 500 });
   }
 }
-
-

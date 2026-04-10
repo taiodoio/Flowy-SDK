@@ -192,7 +192,7 @@ export function WireframeHeatmap({ wireframes, tapEvents }: WireframeHeatmapProp
             containerWidth={280}
             containerHeight={600}
             heatmapPoints={heatmapPoints}
-            screenshotBase64={currentWireframe.screenshotBase64}
+            screenshotBase64={currentWireframe.screenshotBase64 ?? (currentWireframe as any).screenshot_base64}
           />
         ) : (
           <div className="w-[280px] h-[600px] rounded-xl border border-white/10 bg-slate-950 flex items-center justify-center text-slate-500 text-sm">

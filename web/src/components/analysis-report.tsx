@@ -77,6 +77,12 @@ export function AnalysisReport({ report, session, onToggleApproval, onUpdateTags
         ? "bg-red-500/10 text-red-500 border-red-500/20"
         : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"; // Green by default now for Success/Warnings
 
+    const isLocalAnalysis = session?.analyzedBy === 'local'
+    const aiSourceLabel = isLocalAnalysis ? 'Local AI' : 'Cloud AI'
+    const aiSourceColor = isLocalAnalysis
+        ? 'bg-orange-500/10 text-orange-300 border-orange-500/30'
+        : 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30'
+
     // Overview Splitting (Handle legacy string vs new Object)
     const summaryWorked = data.executive_summary?.worked || []
     const summaryIssues = data.executive_summary?.issues || []
@@ -128,6 +134,9 @@ export function AnalysisReport({ report, session, onToggleApproval, onUpdateTags
                         <div className="flex flex-col items-end gap-3">
                             <Badge variant="outline" className={`text-sm px-3 py-1 ${statusColor}`}>
                                 {headerStatus}
+                            </Badge>
+                            <Badge variant="outline" className={`text-xs px-3 py-1 ${aiSourceColor}`}>
+                                {aiSourceLabel}
                             </Badge>
                         </div>
                     </div>
