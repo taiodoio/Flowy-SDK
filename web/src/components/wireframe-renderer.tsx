@@ -109,7 +109,7 @@ export function WireframeRenderer({
 
   return (
     <div
-      className={`relative overflow-hidden rounded-xl border border-white/10 bg-slate-950 ${className}`}
+      className={`relative overflow-hidden bg-[var(--surface-2)] ${className}`}
       style={{ width: renderedW, height: renderedH, flexShrink: 0 }}
     >
       {/* Screenshot layer — shown at high opacity when available; wireframe nodes are skipped */}

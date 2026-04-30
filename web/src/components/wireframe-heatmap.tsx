@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import type { WireframeFile, FlowyEvent } from '@/lib/types';
 import { findWireframeForEvent } from '@/lib/wireframe-matcher';
 import { WireframeRenderer } from './wireframe-renderer';
+import { PhoneFrame } from './phone-frame';
 
 interface WireframeHeatmapProps {
   wireframes: WireframeFile[];
@@ -126,79 +127,80 @@ export function WireframeHeatmap({ wireframes, tapEvents }: WireframeHeatmapProp
 
   if (wireframes.length === 0) {
     return (
-      <div className="text-slate-400 text-sm p-6 text-center">
-        No wireframes available. Upload wireframe JSON files to enable heatmap.
+      <div className="rounded-xl border border-dashed border-[var(--border)] py-16 px-6 text-center text-[var(--text-tertiary)] text-sm">
+        No wireframes available. Upload wireframe JSON files to enable the heatmap.
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* Screen selector pills — ordered by tap count, with badge */}
-      <div className="flex flex-wrap gap-2">
-        {sortedWireframes.map((w, idx) => {
-          const count = tapCountByScreen[w.screenName] ?? 0;
-          const label = friendlyScreenLabel(w.screenName, idx);
-          const isActive = selectedScreen === w.screenName;
-          return (
-            <button
-              key={w.screenName}
-              onClick={() => setSelectedScreen(w.screenName)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border transition-colors ${
-                isActive
-                  ? 'bg-orange-500/20 border-orange-500/50 text-orange-200'
-                  : 'bg-slate-800/60 border-white/10 text-slate-400 hover:text-white hover:border-white/20'
-              }`}
-            >
-              {label}
-              {count > 0 && (
-                <span className={`inline-flex items-center justify-center rounded-full px-1.5 py-0 text-[10px] font-semibold min-w-[18px] ${
-                  isActive ? 'bg-orange-500/40 text-orange-100' : 'bg-slate-700 text-slate-300'
-                }`}>
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Stats row */}
-      <div className="flex items-center gap-4 text-xs text-slate-400">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-4 text-xs text-[var(--text-tertiary)]">
         <span>
-          <span className="text-white font-medium">{filteredTaps.length}</span> taps on{' '}
-          <span className="text-slate-200">
-            {currentWireframe ? friendlyScreenLabel(currentWireframe.screenName, 0) : '—'}
+          <span className="text-[var(--text-primary)] font-medium">{filteredTaps.length}</span> taps on{" "}
+          <span className="text-[var(--text-secondary)]">
+            {currentWireframe ? friendlyScreenLabel(currentWireframe.screenName, 0) : "—"}
           </span>
         </span>
         {heatmapPoints.length > 0 && (
-          <>
-            <span>·</span>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400" /> 1–3
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-yellow-300 ml-1" /> 4–6
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-400 ml-1" /> 7–8
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-400 ml-1" /> 9+ taps
-            </span>
-          </>
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400" /> 1–3</span>
+            <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-yellow-300" /> 4–6</span>
+            <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-400" /> 7–8</span>
+            <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-red-400" /> 9+</span>
+          </span>
         )}
       </div>
 
-      {/* Wireframe with heatmap overlay */}
-      <div className="flex justify-start">
-        {currentWireframe ? (
-          <WireframeRenderer
-            rootNode={currentWireframe.rootNode}
-            containerWidth={280}
-            containerHeight={600}
-            heatmapPoints={heatmapPoints}
-            screenshotBase64={currentWireframe.screenshotBase64 ?? (currentWireframe as any).screenshot_base64}
-          />
-        ) : (
-          <div className="w-[280px] h-[600px] rounded-xl border border-white/10 bg-slate-950 flex items-center justify-center text-slate-500 text-sm">
-            No wireframe selected
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 items-start">
+          <div className="flex justify-center lg:justify-start">
+            {currentWireframe ? (
+              <PhoneFrame width={300}>
+                <WireframeRenderer
+                  rootNode={currentWireframe.rootNode}
+                  containerWidth={300}
+                  containerHeight={640}
+                  heatmapPoints={heatmapPoints}
+                  screenshotBase64={currentWireframe.screenshotBase64 ?? (currentWireframe as any).screenshot_base64}
+                />
+              </PhoneFrame>
+            ) : (
+              <div className="w-[300px] h-[640px] rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center justify-center text-[var(--text-tertiary)] text-sm">
+                No wireframe selected
+              </div>
+            )}
           </div>
-        )}
+
+          <div className="space-y-2">
+            <p className="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wider">Screens</p>
+            <div className="max-h-[640px] overflow-auto pr-1 space-y-2">
+              {sortedWireframes.map((w, idx) => {
+                const count = tapCountByScreen[w.screenName] ?? 0;
+                const label = friendlyScreenLabel(w.screenName, idx);
+                const isActive = selectedScreen === w.screenName;
+                return (
+                  <button
+                    key={w.screenName}
+                    onClick={() => setSelectedScreen(w.screenName)}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs border transition-colors ${
+                      isActive
+                        ? "bg-[var(--accent-soft)] border-[var(--accent)] text-[var(--accent)] font-medium"
+                        : "bg-[var(--surface)] border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-strong)]"
+                    }`}
+                  >
+                    <span className="truncate text-left">{label}</span>
+                    <span className={`inline-flex items-center justify-center rounded-full px-1.5 py-0 text-[10px] font-semibold min-w-[18px] ${
+                      isActive ? "bg-[var(--accent)] text-[var(--accent-foreground)]" : "bg-[var(--surface-2)] text-[var(--text-secondary)]"
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
