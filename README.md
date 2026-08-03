@@ -1,6 +1,6 @@
 # Flowy
 
-![Flowy Hero](assets/flowy-hero.png)
+![Flowy Hero](assets/flowy_hero_2.png)
 
 Flowy è una piattaforma per analizzare sessioni utente mobile senza aggiungere tag manuali a ogni interazione. Gli SDK catturano eventi, testo riconosciuto, gerarchie visuali e screenshot compressi; il dashboard ricostruisce il percorso dell’utente e mette in evidenza tap, errori, schermate e punti di attrito.
 
@@ -54,6 +54,20 @@ App Android ── upload HTTPS ──> endpoint configurato ──┘       │
 | iOS SDK | [ios-sdk](./ios-sdk) | iOS 13+, Swift 5.9+, Xcode 15+ |
 | Android SDK | [android-sdk](./android-sdk) | minSdk 24, compileSdk 34, Java/Kotlin target 17 |
 | Web Dashboard | [web](./web) | Node.js, npm, Next.js 16 |
+
+## Anteprima del dashboard
+
+![Sessions dashboard](assets/dashboard_2.png)
+
+La vista Sessions raccoglie le sessioni importate, lo stato dell’analisi, la piattaforma AI, i tag e il numero di eventi.
+
+![Session overview](assets/Dashboard_ticket.png)
+
+La vista Overview sintetizza il risultato della sessione, separando ciò che ha funzionato dai punti di attenzione rilevati dall’analisi.
+
+![Session replay](assets/Replay.png)
+
+La vista Replay consente di seguire gli eventi nel tempo, visualizzare lo screenshot associato e analizzare tap e scroll.
 
 ## Integrazione nell’app iOS
 
