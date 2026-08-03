@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flowy — Session Intelligence</title>
+  <style>
+    :root {
+      --paper: #f7f8fa;
+      --card: #ffffff;
+      --ink: #111318;
+      --muted: #6f7682;
+      --line: #e3e6eb;
+      --blue: #3b6ff6;
+      --blue-soft: #eaf0ff;
+      --green: #16a66a;
+      --orange: #f59e0b;
+      --radius: 24px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: #dfe3e9;
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      padding: 28px;
+    }
+
+    .slide {
+      position: relative;
+      width: min(1600px, 100%);
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      padding: 48px 58px 38px;
+      background:
+        radial-gradient(circle at 84% 8%, rgba(59, 111, 246, .08), transparent 28%),
+        var(--paper);
+      box-shadow: 0 24px 70px rgba(22, 31, 48, .18);
+    }
+
+    .topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 22px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--ink);
+      letter-spacing: -.02em;
+      text-transform: none;
+      font-size: 16px;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      color: white;
+      background: var(--blue);
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(59, 111, 246, .26);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.35fr .65fr;
+      align-items: end;
+      gap: 42px;
+      margin-bottom: 26px;
+    }
+
+    h1 {
+      max-width: 780px;
+      margin: 0;
+      font-size: clamp(42px, 5.1vw, 78px);
+      line-height: .96;
+      letter-spacing: -.075em;
+      font-weight: 720;
+    }
+
+    .hero-copy {
+      max-width: 430px;
+      margin: 0 0 5px auto;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.35;
+      letter-spacing: -.02em;
+    }
+
+    .hero-copy strong { color: var(--ink); }
+
+    .bento {
+      display: grid;
+      grid-template-columns: 1.1fr 1.1fr .9fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 14px;
+      height: calc(100% - 174px);
+      min-height: 0;
+    }
+
+    .card {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card);
+    }
+
+    .card-pad { padding: 22px 24px; }
+
+    .capture {
+      grid-row: span 2;
+      background: var(--ink);
+      color: #fff;
+      border-color: var(--ink);
+    }
+
+    .capture:after {
+      content: "";
+      position: absolute;
+      right: -80px;
+      bottom: -120px;
+      width: 320px;
+      height: 320px;
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 50%;
+      box-shadow: 0 0 0 34px rgba(255,255,255,.03), 0 0 0 72px rgba(255,255,255,.025);
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 750;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+    }
+
+    .capture .label { color: #a7b0c0; }
+
+    h2 {
+      margin: 10px 0 7px;
+      font-size: 25px;
+      line-height: 1.02;
+      letter-spacing: -.05em;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .capture p { color: #bfc6d2; }
+
+    .capture-list {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 13px;
+      margin-top: 26px;
+    }
+
+    .capture-item {
+      display: grid;
+      grid-template-columns: 26px 1fr;
+      gap: 11px;
+      align-items: start;
+      font-size: 13px;
+      line-height: 1.28;
+    }
+
+    .capture-item b { display: block; margin-bottom: 2px; }
+    .capture-item span { color: #aeb7c6; }
+
+    .dot {
+      display: grid;
+      place-items: center;
+      width: 25px;
+      height: 25px;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 50%;
+      color: #bcd0ff;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .replay {
+      grid-column: span 1;
+      padding: 0;
+      background: #eef2fb;
+    }
+
+    .replay .copy {
+      position: absolute;
+      z-index: 2;
+      top: 20px;
+      left: 22px;
+      max-width: 210px;
+    }
+
+    .replay img {
+      position: absolute;
+      right: -34px;
+      bottom: -70px;
+      width: 86%;
+      border: 7px solid #4e586a;
+      border-radius: 30px;
+      transform: rotate(-2deg);
+      box-shadow: 0 16px 28px rgba(46, 59, 83, .2);
+    }
+
+    .ai {
+      grid-column: span 1;
+      background: var(--blue);
+      color: #fff;
+      border-color: var(--blue);
+    }
+
+    .ai .label, .ai p { color: #d8e3ff; }
+
+    .ai h2 { max-width: 245px; }
+
+    .ai-orbit {
+      position: absolute;
+      right: -34px;
+      bottom: -68px;
+      width: 200px;
+      height: 200px;
+      border: 1px solid rgba(255,255,255,.32);
+      border-radius: 50%;
+      box-shadow: 0 0 0 24px rgba(255,255,255,.08), 0 0 0 54px rgba(255,255,255,.06);
+    }
+
+    .ai-orbit:after {
+      content: "AI";
+      position: absolute;
+      top: 72px;
+      left: 72px;
+      display: grid;
+      place-items: center;
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      color: var(--blue);
+      background: #fff;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: .08em;
+    }
+
+    .overview {
+      grid-column: span 1;
+      padding: 0;
+    }
+
+    .overview img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top left;
+    }
+
+    .overview .overlay {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      left: 14px;
+      padding: 11px 13px;
+      border: 1px solid rgba(255,255,255,.76);
+      border-radius: 13px;
+      color: var(--ink);
+      background: rgba(255,255,255,.86);
+      backdrop-filter: blur(12px);
+      font-size: 11px;
+      line-height: 1.22;
+    }
+
+    .overview .overlay b { display: block; margin-bottom: 2px; }
+
+    .bottom {
+      grid-column: span 2;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1px;
+      padding: 0;
+      background: var(--line);
+    }
+
+    .metric {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 18px 22px;
+      background: var(--card);
+    }
+
+    .metric:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+    .metric:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+
+    .metric strong {
+      margin-bottom: 4px;
+      font-size: 22px;
+      letter-spacing: -.05em;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.2;
+    }
+
+    .green { color: var(--green); }
+    .orange { color: var(--orange); }
+    .blue { color: var(--blue); }
+
+    .footer {
+      position: absolute;
+      right: 58px;
+      bottom: 13px;
+      color: #9ba2ad;
+      font-size: 10px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    @media (max-width: 900px) {
+      body { display: block; padding: 0; }
+      .slide { width: 100%; height: auto; aspect-ratio: auto; min-height: 100vh; padding: 32px 24px 48px; }
+      .hero { grid-template-columns: 1fr; gap: 12px; }
+      .hero-copy { margin: 0; }
+      .bento { height: auto; grid-template-columns: 1fr; grid-template-rows: auto; }
+      .capture, .replay, .ai, .overview, .bottom { grid-column: auto; grid-row: auto; min-height: 280px; }
+      .bottom { min-height: 120px; }
+      .replay img { width: 65%; }
+      .footer { right: 24px; }
+    }
+
+    @media print {
+      @page { size: 16in 9in; margin: 0; }
+      body { padding: 0; background: #fff; }
+      .slide { width: 1600px; height: 900px; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="slide" aria-label="Flowy product overview slide">
+    <div class="topline">
+      <div class="brand"><span class="brand-mark">✦</span>Flowy</div>
+      <div>Session intelligence / 01</div>
+    </div>
+
+    <section class="hero">
+      <h1>See what users<br>actually do.</h1>
+      <p class="hero-copy"><strong>Flowy turns mobile sessions into evidence.</strong><br>Capture real behavior, replay the journey, and surface the moments that need attention — with almost no integration overhead.</p>
+    </section>
+
+    <section class="bento">
+      <article class="card capture card-pad">
+        <div class="label">Capture engine</div>
+        <h2>From interaction<br>to context.</h2>
+        <p>One lightweight layer captures the signal around every meaningful moment.</p>
+        <div class="capture-list">
+          <div class="capture-item"><div class="dot">01</div><div><b>On-device OCR</b><span>Apple Vision + ML Kit recognize visible text locally.</span></div></div>
+          <div class="capture-item"><div class="dot">02</div><div><b>Selective UI map</b><span>Full hierarchy only when a tap, scroll, error, or success makes it useful.</span></div></div>
+          <div class="capture-item"><div class="dot">03</div><div><b>Visual evidence</b><span>Compressed screenshots keep the state of the screen, not just the log.</span></div></div>
+          <div class="capture-item"><div class="dot">04</div><div><b>Privacy-aware</b><span>Secure fields are redacted before they become session data.</span></div></div>
+        </div>
+      </article>
+
+      <article class="card replay">
+        <div class="copy">
+          <div class="label">Replay</div>
+          <h2>Watch the journey.</h2>
+          <p>Step through every event with the screen state that explains it.</p>
+        </div>
+        <img src="Replay.png" alt="Flowy session replay view">
+      </article>
+
+      <article class="card ai card-pad ai">
+        <div class="label">AI analysis</div>
+        <h2>Make the signal actionable.</h2>
+        <p>Gemini or local Ollama turns the session into a reconstructed flow, UX findings, and a ready-to-run Maestro test script.</p>
+        <div class="ai-orbit" aria-hidden="true"></div>
+      </article>
+
+      <article class="card overview">
+        <img src="Dashboard_ticket.png" alt="Flowy session overview with successes and attention points">
+        <div class="overlay"><b>From raw events to a decision.</b> What worked, what failed, and where to look next.</div>
+      </article>
+
+      <article class="card bottom">
+        <div class="metric"><strong class="blue">0 tags</strong><span>Zero-instrumentation capture across UIKit, SwiftUI, and Android.</span></div>
+        <div class="metric"><strong class="green">On-device</strong><span>OCR and sensitive-field redaction before export.</span></div>
+        <div class="metric"><strong class="orange">One bundle</strong><span>Events, wireframes, screenshots, and AI-ready context.</span></div>
+      </article>
+    </section>
+
+    <div class="footer">Flowy SDK · Mobile session analysis</div>
+  </main>
+</body>
+</html>
