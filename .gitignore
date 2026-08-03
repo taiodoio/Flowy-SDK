@@ -3,6 +3,9 @@ node_modules/
 .next/
 out/
 build/
+.gradle/
+*.swp
+.npm-cache/
 .env
 .env.local
 
