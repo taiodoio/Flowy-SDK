@@ -1,108 +1,269 @@
-# Flowy — AI-Powered User Session Analysis
+# Flowy
 
 ![Flowy Hero](assets/flowy-hero.png)
 
-**Flowy** is a zero-instrumentation session-replay and analytics platform. It combines lightweight mobile SDKs with a web dashboard to reconstruct user journeys using **Computer Vision (OCR)**, **selective DOM extraction**, **compressed screenshots**, and **Generative AI** — without any manual tagging.
+Flowy è una piattaforma per analizzare sessioni utente mobile senza aggiungere tag manuali a ogni interazione. Gli SDK catturano eventi, testo riconosciuto, gerarchie visuali e screenshot compressi; il dashboard ricostruisce il percorso dell’utente e mette in evidenza tap, errori, schermate e punti di attrito.
 
----
+Il progetto è composto da:
 
-## ✨ Key Features
+- **FlowySDK iOS** — SDK completo per UIKit e SwiftUI, con export locale di un bundle di sessione JSON.
+- **Flowy SDK Android** — SDK in Kotlin per cattura automatica di lifecycle, gerarchia UI e OCR; invia gli eventi all’endpoint configurato.
+- **Flowy Web Dashboard** — dashboard Next.js per caricare sessioni, riprodurle, visualizzare heatmap e generare report AI.
 
-- **👁️ Hybrid Capture Engine** — OCR always runs; full DOM extraction triggers only on key events (taps, errors, success confirmations); screenshots capture every relevant screen state
-- **📸 Screenshot Embedding** — Every meaningful state is captured as a compressed JPEG (scale `0.40`, quality `0.40`, ~18–30 KB) embedded directly in the bundle. The dashboard renders them as visual backgrounds with heatmap overlays
-- **🔁 Session Replay** — Step-by-step event playback with timestamp-based wireframe matching: post-tap/scroll screenshots prefer the frame captured ≤5 s *after* the event (destination screen); SCREEN/ERROR/SUCCESS prefer the frame ≤10 s *before*
-- **🔥 Tap Heatmap** — All taps overlaid per screen, sorted by volume. Absolute color scale: green = 1–3, yellow = 4–6, orange = 7–8, red = 9+
-- **🧠 AI Analysis** — Gemini multimodal report: reconstructed user flow, error/success analysis, UX heuristics, automated Maestro YAML. Up to 5 representative screenshots are selected from the session and sent alongside the full event timeline
-- **🔒 Privacy First** — All OCR and analysis are on-device. Secure fields (passwords, credit cards) are redacted to `[SECURE_FIELD]` before anything is recorded
-- **📦 Single-file Export** — Events + wireframes + screenshots merged into one `flowy_session_*.json` bundle
+> Stato: iOS e dashboard coprono il workflow principale export → upload → analisi. Android è attualmente sperimentale e usa una pipeline di upload separata dal bundle JSON iOS.
 
----
+## Capacità
 
-## 🏗️ Architecture
+### Cattura ibrida
 
-| Component | Path | Description |
+- OCR on-device: Apple Vision su iOS e Google ML Kit Text Recognition su Android.
+- Cattura automatica delle schermate e deduplicazione visuale delle schermate passive.
+- Estrazione selettiva della gerarchia UI/DOM su tap, scroll, errori e conferme di successo.
+- Identificazione dei campi sensibili: i tap su campi password/secure vengono registrati senza testo.
+- API manuali per registrare schermate, errori e wireframe.
+
+### Analisi e dashboard
+
+- Upload drag-and-drop di flowy_session_*.json.
+- Replay evento per evento con associazione temporale allo screenshot più pertinente.
+- Heatmap dei tap con scala assoluta: verde 1–3, giallo 4–6, arancio 7–8, rosso 9+.
+- Flow graph e ricostruzione narrativa del percorso utente.
+- Report multimodale Gemini: percorso, errori/successi, euristiche UX e YAML per Maestro.
+- Analisi locale con Ollama e gemma4:e4b, senza API key Gemini.
+- Storage locale in web/data/sessions/; non è presente un database hosted.
+
+### Matching degli screenshot
+
+1. TAP e SCROLL: preferisce uno screenshot fino a 5 secondi dopo l’evento.
+2. SCREEN, ERROR e SUCCESS: preferisce uno screenshot fino a 10 secondi prima.
+3. Fallback sul wireframe temporalmente più vicino e infine sul nome schermata fuzzy.
+
+## Architettura
+
+~~~text
+App iOS ── exportSession() ──> flowy_session_*.json ──┐
+                                                       ├─> Flowy Web Dashboard
+App Android ── upload HTTPS ──> endpoint configurato ──┘       │
+                                                               ├─> Replay / heatmap
+                                                               ├─> Gemini remoto
+                                                               └─> Ollama locale
+~~~
+
+| Componente | Directory | Requisiti principali |
 |---|---|---|
-| **iOS SDK** | [`/ios-sdk`](./ios-sdk) | Hybrid capture: Apple Vision OCR + DOM swizzling + compressed screenshots. Works with UIKit and SwiftUI NavigationStack |
-| **Android SDK** | [`/android-sdk`](./android-sdk) | Android capture: ML Kit OCR, lifecycle/window interception, UI hierarchy matching |
-| **Web Dashboard** | [`/web`](./web) | Next.js dashboard: session upload, replay, tap heatmap, AI analysis report |
+| iOS SDK | [ios-sdk](./ios-sdk) | iOS 13+, Swift 5.9+, Xcode 15+ |
+| Android SDK | [android-sdk](./android-sdk) | minSdk 24, compileSdk 34, Java/Kotlin target 17 |
+| Web Dashboard | [web](./web) | Node.js, npm, Next.js 16 |
 
-For all tunable constants (capture timings, screenshot quality, AI model, screenshot count) see [`ios-sdk/TUNING.md`](./ios-sdk/TUNING.md).
+## Integrazione nell’app iOS
 
----
+### Installazione e configurazione
 
-## 🚀 Getting Started — iOS
+In Xcode: **File → Add Package Dependencies…**, inserisci l’URL del repository e seleziona FlowySDK. Per un checkout locale usa **Add Local…** e scegli ios-sdk.
 
-### 1. Install
+Chiama Flowy.configure prima che venga presentata la prima schermata.
 
-Add `FlowySDK` to your project via Swift Package Manager in Xcode (**File → Add Package Dependencies…**).
+SwiftUI:
 
-### 2. Initialize
-
-```swift
+~~~swift
+import SwiftUI
 import FlowySDK
 
 @main
-struct YourApp: App {
+struct ExampleApp: App {
     init() {
-        Flowy.configure(apiKey: "YOUR_API_KEY")
+        Flowy.configure(apiKey: "YOUR_FLOWY_API_KEY")
     }
-    var body: some Scene { WindowGroup { ContentView() } }
+
+    var body: some Scene {
+        WindowGroup { ContentView() }
+    }
 }
-```
+~~~
 
-Auto-capture starts immediately — no additional instrumentation needed.
+UIKit:
 
-### 3. Export the session
+~~~swift
+import UIKit
+import FlowySDK
 
-At the end of a test flow, export the full session bundle:
+@main
+final class AppDelegate: UIResponder, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        Flowy.configure(apiKey: "YOUR_FLOWY_API_KEY")
+        return true
+    }
+}
+~~~
 
-```swift
+Dopo configure, la cattura parte automaticamente: non servono tag o callback per tap, scroll, schermate, errori e conferme di successo.
+
+### API manuali
+
+~~~swift
+Flowy.shared.trackScreen(name: "CheckoutWebView")
+Flowy.shared.trackError(description: "Payment Gateway Timeout")
+
+Flowy.shared.captureWireframe(screenName: "OnboardingStep2")
+
+Flowy.shared.captureWireframe(
+    screenName: "OnboardingStep2",
+    screenshotBase64: screenshotBase64
+)
+~~~
+
+### Export della sessione
+
+~~~swift
 Flowy.shared.exportSession()
-```
+~~~
 
-This merges the event log + all wireframes and screenshots into a single file:
+Crea il file locale Documents/flowy_session_<timestamp>.json, con eventi, wireframe, timestamp e screenshot base64.
 
-```
-Documents/flowy_session_<timestamp>.json
-```
+Per conservare anche i file parziali:
 
-### 4. Upload to the dashboard
+~~~swift
+Flowy.shared.exportSession(deleteWireframeParts: false)
+~~~
 
-Retrieve the bundle via **Xcode → Window → Devices and Simulators → Download Container**, then drag-and-drop `flowy_session_*.json` into the Flowy web dashboard.
+### Permessi iOS
 
----
+Flowy non richiede permessi runtime per fotocamera, microfono, posizione, contatti o libreria foto. L’OCR e la cattura degli screenshot operano sulla UI dell’app e non aprono la fotocamera.
 
-## 🚀 Getting Started — Android
+Per rendere il bundle visibile nell’app Files, aggiungi al Info.plist dell’app host, non all’SDK:
 
-### 1. Install
+~~~xml
+<key>UIFileSharingEnabled</key>
+<true/>
+<key>LSSupportsOpeningDocumentsInPlace</key>
+<true/>
+~~~
 
-Add the `flowy-sdk` module from [`/android-sdk`](./android-sdk) to your app project.
+Queste chiavi sono opzionali: in alternativa recupera il bundle da Xcode tramite **Window → Devices and Simulators → Download Container…**.
 
-### 2. Initialize
+### Privacy iOS
 
-```kotlin
+- L’OCR viene eseguito on-device tramite Apple Vision.
+- I campi secure vengono registrati come [SECURE_FIELD] senza testo.
+- Screenshot, eventi e gerarchie restano localmente nell’app fino all’export manuale.
+- La gerarchia può contenere testo visibile non classificato come secure: valida i flussi reali prima della distribuzione.
+- Una API key mobile può essere estratta: usa chiavi limitate all’ambiente e ai permessi necessari.
+
+Guida completa: [ios-sdk/README.md](./ios-sdk/README.md) e [ios-sdk/GUIDA_INTEGRAZIONE.md](./ios-sdk/GUIDA_INTEGRAZIONE.md).
+
+## Integrazione nell’app Android
+
+L’SDK è un modulo library Kotlin. Includilo nel progetto:
+
+~~~kotlin
+// settings.gradle.kts
+include(":app", ":flowy-sdk")
+project(":flowy-sdk").projectDir = file("../Flowy-SDK/android-sdk")
+~~~
+
+~~~kotlin
+// app/build.gradle.kts
+dependencies {
+    implementation(project(":flowy-sdk"))
+}
+~~~
+
+Configuralo nella classe Application:
+
+~~~kotlin
+import android.app.Application
 import com.flowy.sdk.Flowy
 import com.flowy.sdk.FlowyOptions
 
-class App : Application() {
+class ExampleApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+
         Flowy.configure(
-            context = this,
-            apiKey = "YOUR_API_KEY",
-            options = FlowyOptions(uploadUrl = "https://your-backend.example.com/flowy/events")
+            application = this,
+            apiKey = "YOUR_FLOWY_API_KEY",
+            options = FlowyOptions(
+                uploadUrl = "https://your-backend.example.com/flowy/events"
+            )
         )
     }
 }
-```
+~~~
 
----
+Registra la classe nel manifest dell’app:
 
-## 📦 Session Bundle Format
+~~~xml
+<application
+    android:name=".ExampleApplication"
+    ... />
+~~~
 
-The export file (`flowy_session_<timestamp>.json`) contains:
+### Permessi Android
 
-```json
+Il modulo dichiara già:
+
+~~~xml
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+~~~
+
+Non sono richiesti permessi runtime per fotocamera, microfono, posizione, storage o accessibilità. L’SDK usa i lifecycle callback e l’intercettazione delle finestre dell’app stessa.
+
+Gli eventi vengono inviati all’uploadUrl tramite HTTPS con header Authorization: Bearer apiKey. Il backend deve autenticare la richiesta e gestire il payload JSON. Il valore predefinito nel modulo è https://api.flowy.com/v1/events; per un’installazione reale configura esplicitamente un endpoint controllato dal tuo ambiente.
+
+> Limitazione attuale: Android non espone ancora l’equivalente iOS di exportSession() per creare un bundle completo importabile nel dashboard. La pipeline corrente invia gli eventi tramite FlowyUploader.
+
+## Esecuzione del Web Dashboard
+
+~~~bash
+cd web
+npm install
+npm run dev
+~~~
+
+Apri [http://localhost:3000](http://localhost:3000) e carica un flowy_session_*.json esportato dall’SDK iOS.
+
+Build di produzione:
+
+~~~bash
+npm run build
+npm start
+~~~
+
+### Gemini remoto
+
+Crea localmente web/.env.local:
+
+~~~dotenv
+GEMINI_API_KEY=replace_with_your_key
+~~~
+
+La chiave viene letta dalle API server-side. Non usare NEXT_PUBLIC_GEMINI_API_KEY e non inserirla nel codice client. .env.local è ignorato da Git e non deve essere committato.
+
+### Ollama locale
+
+~~~bash
+ollama pull gemma4:e4b
+ollama serve
+~~~
+
+Il dashboard usa Ollama su http://localhost:11434. Questa modalità non richiede GEMINI_API_KEY, ma il processo Next.js deve poter raggiungere Ollama.
+
+### Storage e sicurezza
+
+- Le sessioni caricate vengono salvate in web/data/sessions/.
+- Lo storage è locale e pensato per sviluppo o installazioni controllate.
+- Proteggi il server e gli endpoint prima di esporre il dashboard su una rete pubblica.
+- Non committare .env.local, API key, sessioni reali o payload con dati personali.
+
+## Formato del session bundle
+
+L’export iOS usa un file JSON consolidato:
+
+~~~json
 {
   "version": 1,
   "exported_at": 1711234567.89,
@@ -124,58 +285,84 @@ The export file (`flowy_session_<timestamp>.json`) contains:
     }
   ]
 }
-```
+~~~
 
-| `action` | Meaning |
+| Evento | Significato |
 |---|---|
-| `SCREEN` | Screen became visible |
-| `TAP` | User tap with OCR-identified text |
-| `SECURE_TAP` | Tap on a password field (text redacted) |
-| `SCROLL` | Scroll gesture detected (displacement > 12 pt); generates a post-scroll screenshot |
-| `ERROR` | Error text detected on screen |
-| `SUCCESS` | Success/confirmation text detected |
+| SCREEN | Una schermata è diventata visibile. |
+| TAP | Tap con testo riconosciuto tramite OCR. |
+| SECURE_TAP | Tap su un campo secure; il testo non viene registrato. |
+| SCROLL | Scroll oltre 12 pt; viene catturato lo stato successivo. |
+| ERROR | Testo associato a un errore rilevato. |
+| SUCCESS | Testo di conferma o successo rilevato. |
 
----
+## Configurazione della cattura
 
-## 🌐 Web Dashboard Features
+I valori di timing e qualità sono documentati in [ios-sdk/TUNING.md](./ios-sdk/TUNING.md).
 
-| Feature | Description |
-|---|---|
-| **Session Upload** | Drag-and-drop `flowy_session_*.json` bundles |
-| **Session Replay** | Step through every event with the matched screenshot; SCROLL shown with ↕ icon |
-| **Tap Heatmap** | Screens sorted by tap count; absolute color scale (not relative) |
-| **AI Report** | Gemini multimodal analysis: reconstructed flow, errors, UX heuristics, Maestro YAML |
-| **User Flow** | Reconstructed narrative of the full session journey |
+| Parametro | Valore |
+|---|---:|
+| Ritardo cattura dopo tap | 0,8 s |
+| Ritardo cattura dopo scroll | 0,5 s |
+| Ritardo cattura schermata passiva | 0,3 s |
+| Debounce scansione passiva | 0,9 s |
+| Scala screenshot normale | 0,40 |
+| Qualità JPEG normale | 0,40 |
+| Soglia deduplicazione visuale | 8% |
 
----
+## Troubleshooting
 
-## 🧪 Run The Dashboard Locally
+**Il dashboard mostra solo lo splash screen** — chiama Flowy.configure prima del primo viewDidAppear.
 
-From the [`/web`](./web) folder:
+**Lo screenshot associato all’evento è errato** — carica il bundle completo esportato da exportSession(), inclusi captured_at, wireframes e screenshot_base64.
 
-```bash
-npm install
-printf 'GEMINI_API_KEY=your_key_here\n' > .env.local
-npm run dev
-```
+**No key window found su iOS** — chiama captureWireframe in viewDidAppear o onAppear.
 
-Then open `http://localhost:3000` and upload a `flowy_session_*.json` bundle.
+**Il file non è visibile nell’app Files** — aggiungi UIFileSharingEnabled e LSSupportsOpeningDocumentsInPlace all’Info.plist dell’app host.
 
-Notes:
+**Gemini non parte** — verifica GEMINI_API_KEY in web/.env.local, poi riavvia Next.js.
 
-- `.env.local` is intentionally ignored and must not be committed
-- Uploaded sessions are stored locally in `web/data/sessions/`
-- The current dashboard uses local file storage, not a hosted database
+**Ollama non parte** — verifica ollama serve, il modello gemma4:e4b e http://localhost:11434.
 
----
+**Android non invia eventi** — controlla INTERNET, uploadUrl, raggiungibilità HTTPS e risposta server. L’header è Authorization: Bearer apiKey.
 
-## 🤝 Contributing
+## Sviluppo e verifica
 
-1. Fork the repo.
-2. Create a feature branch.
-3. Submit a Pull Request.
+~~~bash
+cd web
+npm run lint
+npm run build
+~~~
 
----
+Per i test iOS:
+
+~~~bash
+cd ios-sdk
+swift test
+~~~
+
+Il modulo Android richiede Gradle/Android Studio con SDK Android 34 e Java 17.
+
+## Struttura del repository
+
+~~~text
+Flowy-SDK/
+├── ios-sdk/       # Swift Package Manager + test iOS
+├── android-sdk/   # Android library Kotlin
+├── web/           # Next.js dashboard e API server-side
+├── assets/        # Immagini della documentazione/UI
+└── README.md
+~~~
+
+## Contribuire
+
+1. Crea un branch dedicato.
+2. Non aggiungere .env*, API key, sessioni reali, .gradle/, .npm-cache/ o file generati.
+3. Esegui i check del componente modificato.
+4. Apri una pull request descrivendo cambiamenti, limiti e impatto privacy.
+
+## Licenza
+
+Il repository non contiene attualmente un file LICENSE. Verifica i termini di utilizzo con i maintainer prima di distribuire Flowy o incorporarlo in un prodotto.
 
 *Built with ❤️ by Flavio Montagner*
-
