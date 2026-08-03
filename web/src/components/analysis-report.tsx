@@ -1,56 +1,59 @@
 "use client"
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Separator } from "@/components/ui/separator"
 import ReactMarkdown from "react-markdown"
-import { AlertCircle, CheckCircle, Clock, Smartphone, Code, Lightbulb, Activity, AlertTriangle, FileText, ChevronDown, ChevronUp, XCircle, MessageSquare } from "lucide-react"
-
-import { FlowGraph } from "@/components/flow-graph"
-import { LayoutGrid, Tag as TagIcon, Plus } from "lucide-react"
-import { Switch } from "@/components/ui/switch"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { useState } from "react"
+import {
+    AlertCircle,
+    CheckCircle,
+    Clock,
+    Smartphone,
+    Code,
+    Lightbulb,
+    Activity,
+    AlertTriangle,
+    FileText,
+    ChevronDown,
+    XCircle,
+    MessageSquare,
+} from "lucide-react"
 import dynamic from "next/dynamic"
+import { useState, type ReactNode } from "react"
 
 const SessionReplay = dynamic(() => import("./session-replay").then(m => m.SessionReplay), { ssr: false })
 const WireframeHeatmap = dynamic(() => import("./wireframe-heatmap").then(m => m.WireframeHeatmap), { ssr: false })
 
+export type ReportSectionKey =
+    | "overview"
+    | "flow"
+    | "replay"
+    | "heatmap"
+    | "errors"
+    | "successes"
+    | "ux"
+    | "feedback"
+    | "tech"
+    | "test"
+
+export interface SectionDescriptor {
+    key: ReportSectionKey
+    title: string
+    available: boolean
+    count?: number
+}
+
 interface ReportProps {
     report: any
     session: any
-    onToggleApproval?: (id: string, isApproved: boolean) => void
-    onUpdateTags?: (id: string, tags: string[]) => void
+    section: ReportSectionKey
 }
 
-export function AnalysisReport({ report, session, onToggleApproval, onUpdateTags }: ReportProps) {
-    const [newTag, setNewTag] = useState("")
-    const [expandedSections, setExpandedSections] = useState<number[]>([])
-    const hasWireframes = (session?.wireframes?.length ?? 0) > 0
-
+function adaptReport(report: any) {
     if (!report) return null
-
-    if (report.error) {
-        return (
-            <div className="p-6 rounded-xl border border-red-500/20 bg-red-500/10 text-red-500 animate-in fade-in">
-                <h3 className="text-lg font-bold flex items-center gap-2">
-                    <AlertCircle className="w-5 h-5" /> Analysis Failed
-                </h3>
-                <p className="mt-2">{report.error}</p>
-                <p className="text-sm opacity-70 mt-1">Check the server logs or API key.</p>
-            </div>
-        )
-    }
-
-    // Adapt to potential legacy format if API returns old structure during transition
-    const data = report.header ? report : {
+    return report.header ? report : {
         header: {
             title: report.overview || "Session Analysis",
             duration: report.stats?.duration || "-",
             status_text: report.status || "UNKNOWN",
-            main_screens: report.stats?.screens_visited?.join(" -> ") || ""
+            main_screens: report.stats?.screens_visited?.join(" → ") || ""
         },
         executive_summary: report.overview,
         reconstructed_flow: report.journey?.map((j: any) => ({
@@ -63,568 +66,551 @@ export function AnalysisReport({ report, session, onToggleApproval, onUpdateTags
         ux_analysis: report.ux_analysis || [],
         technical_notes: report.insights?.technical_notes,
         maestro_yaml: report.test_case_yaml
-    };
+    }
+}
 
-    const headerStatus = data.header?.status_text || "UNKNOWN"
+export function getReportSections(report: any, session: any): SectionDescriptor[] {
+    const data = adaptReport(report)
+    const hasWireframes = (session?.wireframes?.length ?? 0) > 0
+    const feedbackCount = session?.events?.filter((e: any) => e.action === 'USER_FEEDBACK').length ?? 0
+    const errorCount = data?.error_analysis?.filter((e: any) => e.type !== 'PERSISTENT_WARNING').length ?? 0
+    const successCount = data?.success_analysis?.length ?? 0
+    const uxCount = data?.ux_analysis?.length ?? 0
+    const flowCount = data?.reconstructed_flow?.length ?? 0
 
-    // Logic: Status Hierarchy
-    // FAILED only if FUNCTIONAL_ERROR exists or explicitly FAILED.
-    // WARNINGS are acceptable.
-    const isFunctionalFailure = headerStatus.toLowerCase().includes("failed") ||
-        headerStatus.toLowerCase().includes("error"); // Simplified check, relying on prompt
+    return [
+        { key: "overview",  title: "Overview",     available: true },
+        { key: "flow",      title: "Flow",         available: flowCount > 0, count: flowCount },
+        { key: "replay",    title: "Replay",       available: hasWireframes },
+        { key: "heatmap",   title: "Heatmap",      available: hasWireframes },
+        { key: "errors",    title: "Errors",       available: true, count: errorCount },
+        { key: "successes", title: "Successes",    available: true, count: successCount },
+        { key: "ux",        title: "UX Insights",  available: true, count: uxCount },
+        { key: "feedback",  title: "Feedback",     available: true, count: feedbackCount },
+        { key: "tech",      title: "Technical",    available: !!data?.technical_notes },
+        { key: "test",      title: "Test Script",  available: !!data?.maestro_yaml },
+    ]
+}
 
-    const statusColor = isFunctionalFailure
-        ? "bg-red-500/10 text-red-500 border-red-500/20"
-        : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"; // Green by default now for Success/Warnings
+export function AnalysisReport({ report, session, section }: ReportProps) {
+    const data = adaptReport(report)
 
-    // Overview Splitting (Handle legacy string vs new Object)
-    const summaryWorked = data.executive_summary?.worked || []
-    const summaryIssues = data.executive_summary?.issues || []
-    const summaryLegacy = typeof data.executive_summary === 'string' ? data.executive_summary : null
+    if (!report) return null
 
-    // Handler for adding a tag
-    const handleAddTag = () => {
-        if (!newTag.trim() || !onUpdateTags) return
-        const currentTags = session.tags || []
-        if (!currentTags.includes(newTag.trim())) {
-            onUpdateTags(session.id, [...currentTags, newTag.trim()])
-        }
-        setNewTag("")
+    if (report.error) {
+        return (
+            <div className="p-6 rounded-xl border border-[color:color-mix(in_oklab,var(--danger)_30%,transparent)] bg-[var(--danger-soft)] text-[var(--danger)]">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5" /> Analysis Failed
+                </h3>
+                <p className="mt-2">{report.error}</p>
+                <p className="text-sm opacity-80 mt-1">Check the server logs or API key.</p>
+            </div>
+        )
     }
 
-    // Helper for Accordion
-    const toggleSection = (idx: number) => {
-        setExpandedSections(prev =>
-            prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+    let content: ReactNode = null
+    if (section === "overview") content = <OverviewSection data={data} report={report} session={session} />
+    if (section === "flow") content = <FlowSection data={data} />
+    if (section === "replay") content = <SessionReplay session={session} />
+    if (section === "heatmap") content = (
+        <WireframeHeatmap
+            wireframes={session.wireframes ?? []}
+            tapEvents={(session.events ?? []).filter((e: any) => {
+                const action = (e.action ?? e.type ?? '').toUpperCase()
+                return action === 'TAP' && e.coordinates
+            })}
+        />
+    )
+    if (section === "errors") content = <ErrorsSection data={data} />
+    if (section === "successes") content = <SuccessesSection data={data} />
+    if (section === "ux") content = <UXSection data={data} />
+    if (section === "feedback") content = <FeedbackSection session={session} />
+    if (section === "tech") content = <TechSection data={data} />
+    if (section === "test") content = <TestSection data={data} />
+
+    if (content) return <>{content}</>
+
+    return null
+}
+
+/* ---------- OVERVIEW ---------- */
+function OverviewSection({ data, report, session }: any) {
+    const rawErrors = data?.error_analysis || []
+    const visibleErrors = rawErrors.filter((e: any) => e.type !== 'PERSISTENT_WARNING')
+    const warnings = rawErrors.filter((e: any) => e.type === 'PERSISTENT_WARNING')
+    const derivedStatus = visibleErrors.length > 0 ? "FAILED" : warnings.length > 0 ? "WARNING" : "SUCCESS"
+    const isFailure = derivedStatus === "FAILED"
+    const isWarning = derivedStatus === "WARNING"
+    const isLocal = session?.analyzedBy === 'local'
+
+    const summaryWorked = data?.executive_summary?.worked || []
+    const summaryIssues = data?.executive_summary?.issues || []
+    const summaryLegacy = typeof data?.executive_summary === 'string' ? data.executive_summary : null
+    const summaryDescription =
+        typeof data?.executive_summary === 'string' ? data.executive_summary
+        : data?.executive_summary?.description || report?.overview || data?.header?.title || "No description available."
+
+    return (
+        <div className="space-y-5">
+            {/* Title card */}
+            <section className="relative overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6">
+                <div
+                    className={`pointer-events-none absolute -right-8 top-1/2 -translate-y-1/2 hidden md:block z-0 ${
+                        isFailure ? "text-[var(--danger)]" : isWarning ? "text-[var(--warning)]" : "text-[var(--success)]"
+                    }`}
+                    style={{ opacity: 0.15 }}
+                    aria-hidden
+                >
+                    {isFailure
+                        ? <XCircle className="w-48 h-48" />
+                        : isWarning
+                            ? <AlertTriangle className="w-48 h-48" />
+                            : <CheckCircle className="w-48 h-48" />
+                    }
+                </div>
+                <div className="relative z-10 flex flex-col gap-4">
+                    <div className="min-w-0">
+                        <h2 className="text-xl font-semibold text-[var(--text-primary)] tracking-tight">
+                            {data?.header?.title}
+                        </h2>
+                        <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-[var(--text-tertiary)]">
+                            {data?.header?.duration && (
+                                <span className="inline-flex items-center gap-1.5">
+                                    <Clock className="w-3.5 h-3.5" /> {data.header.duration}
+                                </span>
+                            )}
+                            {data?.header?.main_screens && (
+                                <span className="inline-flex items-center gap-1.5 truncate max-w-[420px]">
+                                    <Smartphone className="w-3.5 h-3.5" /> {data.header.main_screens}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap items-end gap-5">
+                        <div className="space-y-1">
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Status</p>
+                            <StatusPill
+                                tone={isFailure ? "danger" : isWarning ? "warning" : "success"}
+                                label={derivedStatus}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-primary)]">Platform</p>
+                            <StatusPill tone={isLocal ? "warning" : "info"} label={isLocal ? "Local AI" : "Cloud AI"} />
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Summary */}
+            <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5">
+                <p className="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wider mb-2">Summary</p>
+                <p className="text-[var(--text-primary)] text-sm leading-relaxed">
+                    {summaryDescription}
+                </p>
+                <div className="flex flex-wrap gap-2 mt-4">
+                    <CountChip tone="success" label="Successes" value={data?.success_analysis?.length || 0} />
+                    <CountChip tone="danger"  label="Errors"    value={visibleErrors.length} />
+                    <CountChip tone="warning" label="Warnings"  value={warnings.length} />
+                </div>
+            </section>
+
+            {/* Worked / Attention Points */}
+            {(summaryWorked.length > 0 || summaryIssues.length > 0 || summaryLegacy) && (
+                <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5">
+                        <h3 className="text-xs font-medium text-[var(--success)] uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                            <CheckCircle className="w-3.5 h-3.5" /> What Worked
+                        </h3>
+                        {summaryWorked.length > 0 ? (
+                            <ul className="space-y-2">
+                                {summaryWorked.map((item: string, i: number) => (
+                                    <li key={i} className="text-sm text-[var(--text-primary)] flex items-start gap-2">
+                                        <span className="text-[var(--success)] mt-1.5">•</span> {item}
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <p className="text-sm text-[var(--text-muted)] italic">No clear successes listed.</p>
+                        )}
+                    </div>
+
+                    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5">
+                        <h3 className="text-xs font-medium text-[var(--danger)] uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                            <XCircle className="w-3.5 h-3.5" /> Attention Points
+                        </h3>
+                        {summaryIssues.length > 0 ? (
+                            <ul className="space-y-2">
+                                {summaryIssues.map((item: string, i: number) => (
+                                    <li key={i} className="text-sm text-[var(--text-primary)] flex items-start gap-2">
+                                        <span className="text-[var(--danger)] mt-1.5">•</span> {item}
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <p className="text-sm text-[var(--text-muted)] italic">
+                                {isFailure ? "See detailed errors." : "No critical issues detected."}
+                            </p>
+                        )}
+                    </div>
+                </section>
+            )}
+
+            {summaryLegacy && (
+                <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 text-[var(--text-secondary)] text-sm">
+                    {summaryLegacy}
+                </section>
+            )}
+        </div>
+    )
+}
+
+/* ---------- FLOW ---------- */
+function FlowSection({ data }: { data: any }) {
+    const [expanded, setExpanded] = useState<number[]>([])
+    const toggle = (i: number) =>
+        setExpanded(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])
+
+    if (!data?.reconstructed_flow?.length) {
+        return <EmptyState message="No flow reconstructed for this session." />
+    }
+
+    return (
+        <div className="relative pl-6 space-y-3 border-l border-[var(--border)] ml-2 py-1">
+            {data.reconstructed_flow.map((sec: any, idx: number) => {
+                const isAggregated = !!sec.steps
+                const title = isAggregated ? sec.section : sec.phase
+                const summary = isAggregated ? sec.summary : sec.narrative
+                let status = sec.status || (isAggregated ? "NORMAL" : (sec.type || "NORMAL"))
+
+                if (isAggregated && Array.isArray(sec.steps) && sec.steps.length > 0) {
+                    if (sec.steps.some((s: any) => s.type === 'ERROR')) status = 'ERROR'
+                    else if (sec.steps.some((s: any) => s.type === 'SUCCESS')) status = 'SUCCESS'
+                    else status = 'NORMAL'
+                }
+
+                const tone = statusTone(status)
+                const isExpanded = expanded.includes(idx)
+                const isFeedback = title?.toLowerCase().includes('feedback') || sec.steps?.some((s: any) => s.type === 'FEEDBACK')
+
+                return (
+                    <div key={idx} className="relative">
+                        <span className={`absolute -left-[27px] top-4 w-3 h-3 rounded-full ring-4 ring-[var(--background)] z-10 ${tone.dot}`} />
+                        <div className="border border-[var(--border)] rounded-xl overflow-hidden bg-[var(--surface)]">
+                            <button
+                                onClick={() => toggle(idx)}
+                                className="w-full p-4 text-left flex items-start justify-between hover:bg-[var(--surface-hover)] transition-colors"
+                            >
+                                <div className="space-y-1 flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <h3 className={`font-medium text-sm ${tone.text}`}>{title}</h3>
+                                        {status !== 'NORMAL' && (
+                                            <span className={`text-[10px] font-mono shrink-0 border rounded-full px-1.5 py-0.5 ${tone.chip}`}>
+                                                {status}
+                                            </span>
+                                        )}
+                                        {isFeedback && (
+                                            <MessageSquare className="w-3 h-3 text-[var(--accent)] shrink-0" />
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-[var(--text-tertiary)] leading-relaxed">{summary}</p>
+                                </div>
+                                <ChevronDown className={`w-4 h-4 text-[var(--text-muted)] shrink-0 mt-0.5 ml-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {isExpanded && (
+                                <div className="border-t border-[var(--border)] bg-[var(--surface-2)]/50 p-4">
+                                    {isAggregated ? (
+                                        <div className="relative ml-2 space-y-4 border-l border-[var(--border)] pl-5 py-1">
+                                            {sec.steps?.map((step: any, sIdx: number) => {
+                                                const stepTone = statusTone(step.type === 'PERSISTENT_WARNING' ? 'PERSISTENT_WARNING' : step.type)
+                                                return (
+                                                    <div key={sIdx} className="relative">
+                                                        <div className={`absolute -left-[21px] top-1.5 w-2 h-2 rounded-full ring-4 ring-[var(--surface-2)] ${stepTone.dot}`} />
+                                                        <div className="flex flex-col sm:flex-row gap-1 sm:gap-3 items-start">
+                                                            <span className="font-mono text-[10px] text-[var(--text-muted)] shrink-0 mt-0.5">
+                                                                {step.timestamp || "—"}
+                                                            </span>
+                                                            <p className={`text-xs leading-relaxed ${stepTone.text}`}>{step.description}</p>
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {sec.key_actions?.map((act: string, k: number) => (
+                                                <div key={k} className="text-xs text-[var(--text-secondary)] flex items-start gap-2">
+                                                    <span className="w-1 h-1 rounded-full bg-[var(--text-muted)] mt-1.5 shrink-0" />
+                                                    {act}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )
+            })}
+        </div>
+    )
+}
+
+/* ---------- ERRORS ---------- */
+function ErrorsSection({ data }: { data: any }) {
+    if (!data?.error_analysis?.length) {
+        return (
+            <EmptyState
+                icon={<CheckCircle className="w-10 h-10 text-[var(--success)]" />}
+                message="No explicit errors detected in this session."
+            />
+        )
+    }
+    return (
+        <div className="grid gap-3">
+            {data.error_analysis.map((error: any, index: number) => {
+                const isPersistent = error.type === 'PERSISTENT_WARNING'
+                const isCritical = error.type?.includes('CRITICAL') || error.type?.includes('FUNCTIONAL')
+                const tone = isPersistent ? "info" : isCritical ? "danger" : "warning"
+
+                return (
+                    <div key={index} className={`rounded-xl border ${toneBorder(tone)} bg-[var(--surface)] p-5`}>
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                                {tone === 'danger' && <AlertCircle className="w-4 h-4 text-[var(--danger)]" />}
+                                {tone === 'warning' && <AlertTriangle className="w-4 h-4 text-[var(--warning)]" />}
+                                {tone === 'info' && <AlertTriangle className="w-4 h-4 text-[var(--info)]" />}
+                                <h4 className="text-sm font-semibold text-[var(--text-primary)]">{error.type}</h4>
+                                {isPersistent && <span className="text-[10px] text-[var(--text-muted)]">(Ignored as Error)</span>}
+                            </div>
+                            {error.timestamp && (
+                                <span className="font-mono text-xs text-[var(--text-tertiary)] bg-[var(--surface-2)] border border-[var(--border)] rounded px-2 py-0.5">
+                                    {error.timestamp}
+                                </span>
+                            )}
+                        </div>
+                        {error.ocr_text && (
+                            <pre className="mt-3 font-mono text-xs text-[var(--text-secondary)] bg-[var(--surface-2)] border border-[var(--border)] rounded-md p-2.5 whitespace-pre-wrap">
+                                OCR: &ldquo;{error.ocr_text}&rdquo;
+                            </pre>
+                        )}
+                        {error.analysis && (
+                            <p className="mt-3 text-sm text-[var(--text-primary)] leading-relaxed">{error.analysis}</p>
+                        )}
+                    </div>
+                )
+            })}
+        </div>
+    )
+}
+
+/* ---------- SUCCESSES ---------- */
+function SuccessesSection({ data }: { data: any }) {
+    if (!data?.success_analysis?.length) return <EmptyState message="No specific success actions detected." />
+    return (
+        <div className="grid gap-3">
+            {data.success_analysis.map((s: any, i: number) => (
+                <div key={i} className={`rounded-xl border ${toneBorder("success")} bg-[var(--surface)] p-5`}>
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                            <CheckCircle className="w-4 h-4 text-[var(--success)]" />
+                            <h4 className="text-sm font-semibold text-[var(--text-primary)]">{s.action}</h4>
+                        </div>
+                        {s.timestamp && (
+                            <span className="font-mono text-xs text-[var(--text-tertiary)] bg-[var(--surface-2)] border border-[var(--border)] rounded px-2 py-0.5">
+                                {s.timestamp}
+                            </span>
+                        )}
+                    </div>
+                    {s.ocr_text && (
+                        <pre className="mt-3 font-mono text-xs text-[var(--text-secondary)] bg-[var(--surface-2)] border border-[var(--border)] rounded-md p-2.5 whitespace-pre-wrap">
+                            OCR: &ldquo;{s.ocr_text}&rdquo;
+                        </pre>
+                    )}
+                    {s.details && <p className="mt-3 text-sm text-[var(--text-primary)] leading-relaxed">{s.details}</p>}
+                </div>
+            ))}
+        </div>
+    )
+}
+
+/* ---------- UX ---------- */
+function UXSection({ data }: { data: any }) {
+    if (!data?.ux_analysis?.length) return <EmptyState message="No specific UX insights for this session." />
+    return (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {data.ux_analysis.map((insight: any, i: number) => {
+                const isOk = insight.status === "OK"
+                const tone = isOk ? "success" : "warning"
+                return (
+                    <div key={i} className={`rounded-xl border ${toneBorder(tone)} bg-[var(--surface)] p-5`}>
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                                {isOk
+                                    ? <CheckCircle className="w-4 h-4 text-[var(--success)]" />
+                                    : <Lightbulb className="w-4 h-4 text-[var(--warning)]" />
+                                }
+                                <h4 className="text-sm font-semibold text-[var(--text-primary)]">{insight.heuristic}</h4>
+                            </div>
+                            <StatusPill tone={tone} label={insight.status} />
+                        </div>
+                        {insight.observation && (
+                            <p className="mt-3 text-sm text-[var(--text-primary)] leading-relaxed">{insight.observation}</p>
+                        )}
+                        {!isOk && insight.recommendation && (
+                            <div className="mt-3 p-3 rounded-lg bg-[var(--warning-soft)] border border-[color:color-mix(in_oklab,var(--warning)_30%,transparent)] text-[var(--warning)] flex gap-2">
+                                <Activity className="h-4 w-4 shrink-0 mt-0.5" />
+                                <span className="text-sm">{insight.recommendation}</span>
+                            </div>
+                        )}
+                    </div>
+                )
+            })}
+        </div>
+    )
+}
+
+/* ---------- FEEDBACK ---------- */
+function FeedbackSection({ session }: { session: any }) {
+    const events = session.events?.filter((e: any) => e.action === 'USER_FEEDBACK') ?? []
+    if (events.length === 0) {
+        return (
+            <EmptyState
+                icon={<MessageSquare className="w-10 h-10 text-[var(--accent)]/60" />}
+                message="No user feedback collected in this session."
+            />
         )
     }
 
     return (
-        <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-700">
-            {/* Header Section */}
-            <div className="space-y-4">
-                <div className={`p-6 rounded-xl border ${statusColor} backdrop-blur-sm`}>
-                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                        <div>
-                            <h2 className="text-2xl font-bold flex items-center gap-3">
-                                {data.header?.title}
-                            </h2>
-                            <div className="flex flex-wrap items-center gap-4 mt-2 text-muted-foreground">
-                                <span className="flex items-center gap-1.5 bg-secondary/50 px-2 py-1 rounded-md text-sm">
-                                    <Clock className="w-4 h-4" /> {data.header?.duration}
-                                </span>
-                                <span className="flex items-center gap-1.5 bg-secondary/50 px-2 py-1 rounded-md text-sm">
-                                    <Smartphone className="w-4 h-4" /> {data.header?.main_screens}
-                                </span>
-                                {data.header?.deduced_section && (
-                                    <span className="flex items-center gap-1.5 bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2 py-1 rounded-md text-sm">
-                                        <TagIcon className="w-3 h-3" /> {data.header.deduced_section}
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* RIGHT SIDE ACTIONS */}
-                        <div className="flex flex-col items-end gap-3">
-                            <Badge variant="outline" className={`text-sm px-3 py-1 ${statusColor}`}>
-                                {headerStatus}
-                            </Badge>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Session Brief - NEW */}
-                <div className="bg-white/5 p-4 rounded-xl border border-white/10 mb-6">
-                    <h3 className="text-sm font-bold text-slate-400 mb-2 uppercase tracking-wider">Session Brief</h3>
-                    <p className="text-slate-200 text-sm leading-relaxed">
-                        {typeof data.executive_summary === 'string' ? data.executive_summary : (data.executive_summary?.description || report.overview || data.header?.title || "No description available.")}
-                    </p>
-                    <div className="flex gap-4 mt-4">
-                        <Badge variant="outline" className="border-emerald-500/20 text-emerald-400 bg-emerald-500/10">
-                            {data.success_analysis?.length || 0} Successes
-                        </Badge>
-                        <Badge variant="outline" className="border-red-500/20 text-red-400 bg-red-500/10">
-                            {data.error_analysis?.filter((e: any) => e.type !== 'PERSISTENT_WARNING').length || 0} Errors
-                        </Badge>
-                        <Badge variant="outline" className="border-blue-500/20 text-blue-400 bg-blue-500/10">
-                            {data.error_analysis?.filter((e: any) => e.type === 'PERSISTENT_WARNING').length || 0} Warnings
-                        </Badge>
-                    </div>
-                </div>
-
-                {/* Session Overview (Split) */}
-                {
-                    (summaryWorked.length > 0 || summaryIssues.length > 0 || summaryLegacy) && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* What Worked (Green) */}
-                            <div className="bg-emerald-500/5 p-5 rounded-xl border border-emerald-500/10">
-                                <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                    <CheckCircle className="w-4 h-4" /> What Worked
-                                </h3>
-                                {summaryWorked.length > 0 ? (
-                                    <ul className="space-y-2">
-                                        {summaryWorked.map((item: string, i: number) => (
-                                            <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
-                                                <span className="text-emerald-500/50 mt-1.5">•</span> {item}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <p className="text-sm text-muted-foreground italic">
-                                        {summaryLegacy ? "See summary below." : "No clear successes listed."}
-                                    </p>
-                                )}
-                            </div>
-
-                            {/* Issues (Red) */}
-                            <div className="bg-red-500/5 p-5 rounded-xl border border-red-500/10">
-                                <h3 className="text-sm font-bold text-red-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                    <XCircle className="w-4 h-4" /> Critical Issues
-                                </h3>
-                                {summaryIssues.length > 0 ? (
-                                    <ul className="space-y-2">
-                                        {summaryIssues.map((item: string, i: number) => (
-                                            <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
-                                                <span className="text-red-500/50 mt-1.5">•</span> {item}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <p className="text-sm text-muted-foreground italic">
-                                        {isFunctionalFailure ? "See detailed errors." : "No critical issues detected."}
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                    )
+        <div className="space-y-3">
+            {events.map((event: any, i: number) => {
+                let tag = "Feedback"
+                let comment = event.comment || event.ocr_text || ""
+                if (comment.includes(": ")) {
+                    const parts = comment.split(": ")
+                    tag = parts[0]
+                    comment = parts.slice(1).join(": ")
+                } else if (["feature not working", "information not clear", "that's cool!"].includes(comment.toLowerCase())) {
+                    tag = comment
+                    comment = ""
                 }
 
-                {/* Legacy Summary Fallback */}
-                {
-                    summaryLegacy && (
-                        <div className="bg-white/5 p-4 rounded-xl border border-white/10 text-slate-300 text-sm">
-                            {summaryLegacy}
+                return (
+                    <div key={i} className="rounded-xl border border-[color:color-mix(in_oklab,var(--accent)_30%,transparent)] bg-[var(--surface)] p-5">
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-2 text-[var(--accent)]">
+                                <MessageSquare className="w-4 h-4" />
+                                <h4 className="text-sm font-semibold">{tag}</h4>
+                            </div>
+                            <span className="font-mono text-xs text-[var(--text-tertiary)] bg-[var(--surface-2)] border border-[var(--border)] rounded px-2 py-0.5">
+                                {new Date(event.timestamp * 1000).toLocaleTimeString()}
+                            </span>
                         </div>
-                    )
-                }
-            </div >
-
-            <Tabs defaultValue="flow" className="w-full">
-                <TabsList className="flex flex-wrap gap-1 w-full bg-slate-950/50 backdrop-blur-md p-1 border border-white/10 rounded-xl h-auto">
-                    <TabsTrigger value="flow" className="data-[state=active]:bg-indigo-500/20 data-[state=active]:text-indigo-300 py-2.5">User Flow</TabsTrigger>
-                    {hasWireframes && (
-                        <TabsTrigger value="replay" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-300 py-2.5">Replay ▶</TabsTrigger>
-                    )}
-                    {hasWireframes && (
-                        <TabsTrigger value="heatmap" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-300 py-2.5">Heatmap 🔥</TabsTrigger>
-                    )}
-                    <TabsTrigger value="feedback" className="data-[state=active]:bg-blue-600/20 data-[state=active]:text-blue-300 py-2.5">Feedback</TabsTrigger>
-                    <TabsTrigger value="success" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-300 py-2.5">Success</TabsTrigger>
-                    <TabsTrigger value="ux" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-300 py-2.5">UX Insights</TabsTrigger>
-                    <TabsTrigger value="errors" className="data-[state=active]:bg-red-500/20 data-[state=active]:text-red-300 py-2.5">Errors</TabsTrigger>
-                    <TabsTrigger value="tech" className="data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-300 py-2.5">Tech</TabsTrigger>
-                    <TabsTrigger value="test" className="data-[state=active]:bg-slate-500/20 data-[state=active]:text-slate-300 py-2.5">Testing</TabsTrigger>
-                </TabsList>
-
-                {/* Replay Tab */}
-                {hasWireframes && (
-                    <TabsContent value="replay" className="mt-6 animate-in fade-in">
-                        <SessionReplay session={session} />
-                    </TabsContent>
-                )}
-
-                {/* Heatmap Tab */}
-                {hasWireframes && (
-                    <TabsContent value="heatmap" className="mt-6 animate-in fade-in">
-                        <WireframeHeatmap
-                            wireframes={session.wireframes}
-                            tapEvents={(session.events ?? []).filter((e: any) => {
-                                const action = (e.action ?? e.type ?? '').toUpperCase()
-                                return action === 'TAP' && e.coordinates
-                            })}
-                        />
-                    </TabsContent>
-                )}
-
-                {/* User Flow Tab */}
-                {/* User Flow Tab */}
-                <TabsContent value="flow" className="mt-6">
-                    <div className="relative pl-8 space-y-6 border-l-2 border-slate-800/50 ml-4 py-2">
-                        {data.reconstructed_flow?.map((section: any, idx: number) => {
-                            const isAggregated = !!section.steps;
-                            const title = isAggregated ? section.section : section.phase;
-                            const summary = isAggregated ? section.summary : section.narrative;
-
-                            // Default Fallback
-                            let status = section.status || (isAggregated ? "NORMAL" : (section.type || "NORMAL"));
-
-                            // STRICT DERIVATION FROM STEPS (If available)
-                            // This ensures the visual header matches the actual content content (dots).
-                            if (isAggregated && section.steps && Array.isArray(section.steps) && section.steps.length > 0) {
-                                const hasError = section.steps.some((s: any) => s.type === 'ERROR');
-                                const hasSuccess = section.steps.some((s: any) => s.type === 'SUCCESS');
-
-                                if (hasError) {
-                                    status = 'ERROR';
-                                } else if (hasSuccess) {
-                                    status = 'SUCCESS';
-                                } else {
-                                    // If no explicit success or error steps, force NORMAL even if backend said SUCCESS
-                                    status = 'NORMAL';
-                                }
-                            }
-
-                            // Status Colors for Header
-                            let headerBorder = 'border-slate-800';
-                            let headerText = 'text-slate-200';
-                            let headerBg = 'bg-slate-900/50';
-                            let dotColor = 'bg-slate-700 border-slate-950'; // Default Normal Dot
-
-                            // Detect Feedback Section via Title or Summary keywords if status isn't explicit
-                            const isFeedbackSection = title.toLowerCase().includes('feedback') || summary.toLowerCase().includes('feedback');
-                            const hasFeedbackSteps = section.steps?.some((s: any) => s.type === 'FEEDBACK');
-
-                            if (status === 'PERSISTENT_WARNING') {
-                                headerBorder = 'border-yellow-500/30';
-                                headerText = 'text-yellow-300';
-                                headerBg = 'bg-yellow-500/10';
-                                dotColor = 'bg-yellow-500 border-yellow-900';
-                            } else if (status === 'ERROR' || status.includes('FAIL')) {
-                                headerBorder = 'border-red-500/30';
-                                headerText = 'text-red-300';
-                                headerBg = 'bg-red-500/10';
-                                dotColor = 'bg-red-500 border-red-900 animate-pulse';
-                            } else if (status === 'SUCCESS' || title.toLowerCase().includes('success')) {
-                                headerBorder = 'border-emerald-500/30';
-                                headerText = 'text-emerald-300';
-                                headerBg = 'bg-emerald-500/10';
-                                dotColor = 'bg-emerald-500 border-emerald-900';
-                            } else if (isFeedbackSection) {
-                                // Light Blue for Feedback
-                                headerBorder = 'border-blue-400/30';
-                                headerText = 'text-blue-300';
-                                headerBg = 'bg-blue-400/10';
-                                dotColor = 'bg-blue-400 border-blue-900';
-                            } else {
-                                // Explicit visual for Normal
-                                dotColor = 'bg-slate-600 border-slate-900';
-                            }
-
-                            const isExpanded = expandedSections.includes(idx);
-
-                            return (
-                                <div key={idx} className="relative">
-                                    {/* Main Timeline Dot */}
-                                    <div className={`absolute -left-[43px] top-6 w-5 h-5 rounded-full border-4 ${dotColor} shadow-lg z-10 transition-colors duration-300`} />
-
-                                    <div className={`rounded-xl border ${headerBorder} overflow-hidden transition-all duration-300 bg-black/20`}>
-                                        {/* Accordion Header */}
-                                        <div
-                                            onClick={() => toggleSection(idx)}
-                                            className={`p-4 ${headerBg} cursor-pointer flex items-start justify-between hover:bg-white/5 transition-colors`}
-                                        >
-                                            <div className="space-y-1">
-                                                <h3 className={`font-bold text-base ${headerText} flex items-center gap-2`}>
-                                                    {title}
-                                                    {status !== 'NORMAL' && (
-                                                        <Badge variant="outline" className={`text-[10px] h-5 px-1.5 ${headerText} ${headerBorder}`}>
-                                                            {status}
-                                                        </Badge>
-                                                    )}
-                                                    {(isFeedbackSection || hasFeedbackSteps) && (
-                                                        <MessageSquare className="w-4 h-4 text-blue-400" />
-                                                    )}
-                                                </h3>
-                                                <p className="text-sm text-muted-foreground">{summary}</p>
-                                            </div>
-                                            <div className={`mt-1 text-slate-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
-                                                <ChevronDown className="w-5 h-5" />
-                                            </div>
-                                        </div>
-
-                                        {/* Accordion Body (Steps) */}
-                                        {isExpanded && (
-                                            <div className="bg-black/20 p-4 border-t border-white/5 animate-in slide-in-from-top-2">
-                                                {isAggregated ? (
-                                                    <div className="relative ml-2 space-y-5 border-l border-white/10 pl-6 py-2">
-                                                        {section.steps?.map((step: any, sIdx: number) => {
-                                                            const isError = step.type === 'ERROR';
-                                                            const isPersistent = step.type === 'PERSISTENT_WARNING';
-                                                            const isSuccess = step.type === 'SUCCESS';
-                                                            const isFeedback = step.type === 'FEEDBACK';
-
-                                                            let innerDotColor = 'bg-slate-600 border-slate-900';
-                                                            let innerTextColor = 'text-slate-300';
-
-                                                            if (isPersistent) {
-                                                                innerDotColor = 'bg-yellow-500 border-yellow-900';
-                                                                innerTextColor = 'text-yellow-300';
-                                                            } else if (isError) {
-                                                                innerDotColor = 'bg-red-500 border-red-900';
-                                                                innerTextColor = 'text-red-300';
-                                                            } else if (isSuccess) {
-                                                                innerDotColor = 'bg-emerald-500 border-emerald-900';
-                                                                innerTextColor = 'text-emerald-300';
-                                                            } else if (isFeedback) {
-                                                                innerDotColor = 'bg-blue-500 border-blue-900';
-                                                                innerTextColor = 'text-blue-300';
-                                                            } else {
-                                                                // Normal Step
-                                                                innerDotColor = 'bg-slate-500 border-slate-800';
-                                                            }
-
-                                                            return (
-                                                                <div key={sIdx} className="relative group">
-                                                                    {/* Inner Timeline Dot */}
-                                                                    <div className={`absolute -left-[29px] top-1.5 w-3 h-3 rounded-full border-2 ${innerDotColor} shadow-sm z-10`} />
-
-                                                                    <div className="flex flex-col sm:flex-row gap-1 sm:gap-4 items-start">
-                                                                        {/* Timestamp */}
-                                                                        <div className="font-mono text-[10px] text-slate-500 mt-1 shrink-0 bg-white/5 px-1.5 py-0.5 rounded border border-white/5 w-fit sm:w-24 overflow-hidden text-ellipsis whitespace-nowrap">
-                                                                            {step.timestamp || "00:00"}
-                                                                        </div>
-
-                                                                        {/* Description */}
-                                                                        <div className="space-y-1">
-                                                                            <p className={`text-sm leading-relaxed font-medium ${innerTextColor}`}>
-                                                                                {step.description}
-                                                                            </p>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            )
-                                                        })}
-                                                    </div>
-                                                ) : (
-                                                    <div className="text-sm text-slate-400 pl-2">
-                                                        {section.key_actions?.map((act: string, k: number) => (
-                                                            <div key={k} className="mb-2 relative pl-4">
-                                                                <span className="absolute left-0 top-2 w-1.5 h-1.5 rounded-full bg-slate-600"></span>
-                                                                {act}
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )
-                        })}
+                        {comment && <p className="mt-3 text-sm italic text-[var(--text-primary)]">&ldquo;{comment}&rdquo;</p>}
+                        <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)] mt-3">
+                            <Smartphone className="w-3 h-3" />
+                            <span>{event.screen_name || "Unknown screen"}</span>
+                        </div>
                     </div>
-                </TabsContent>
+                )
+            })}
+        </div>
+    )
+}
 
-                {/* Feedback Tab - NEW */}
-                <TabsContent value="feedback" className="mt-6">
-                    {(() => {
-                        const feedbackEvents = session.events?.filter((e: any) => e.action === 'USER_FEEDBACK') || [];
-                        if (feedbackEvents.length > 0) {
-                            return (
-                                <div className="grid gap-4">
-                                    {feedbackEvents.map((event: any, index: number) => {
-                                        // Parse Tag and Comment: "Tag: Comment"
-                                        let tag = "Feedback";
-                                        let comment = event.comment || event.ocr_text || "";
+/* ---------- TECH ---------- */
+function TechSection({ data }: { data: any }) {
+    return (
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)] mb-4">
+                <Code className="w-4 h-4 text-[var(--info)]" /> Technical Observations
+            </h3>
+            <div className="prose prose-sm max-w-none text-[var(--text-primary)] prose-headings:text-[var(--text-primary)] prose-p:text-[var(--text-secondary)] prose-strong:text-[var(--text-primary)] prose-code:text-[var(--accent)]">
+                <ReactMarkdown>{data?.technical_notes || "No technical notes available."}</ReactMarkdown>
+            </div>
+        </div>
+    )
+}
 
-                                        if (comment.includes(": ")) {
-                                            const parts = comment.split(": ");
-                                            tag = parts[0];
-                                            comment = parts.slice(1).join(": ");
-                                        } else if (["feature not working", "information not clear", "that's cool!"].includes(comment.toLowerCase())) {
-                                            tag = comment;
-                                            comment = ""; // Just a tag
-                                        }
+/* ---------- TEST ---------- */
+function TestSection({ data }: { data: any }) {
+    return (
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)] px-5 h-12 border-b border-[var(--border)]">
+                <FileText className="w-4 h-4 text-[var(--text-tertiary)]" /> Maestro Test Script (YAML)
+            </div>
+            <pre className="font-mono text-xs text-[var(--success)] overflow-x-auto p-5 bg-[var(--surface-2)]/40">
+                {data?.maestro_yaml || "# No test generated"}
+            </pre>
+        </div>
+    )
+}
 
-                                        return (
-                                            <Card key={index} className="border-l-4 border-l-blue-500 bg-blue-500/5">
-                                                <CardHeader className="pb-2">
-                                                    <div className="flex justify-between items-center">
-                                                        <CardTitle className="text-base font-bold flex items-center gap-2 text-blue-400">
-                                                            <MessageSquare className="h-5 w-5" />
-                                                            {tag}
-                                                        </CardTitle>
-                                                        <span className="font-mono text-xs text-blue-300/70 bg-blue-900/30 px-2 py-1 rounded">
-                                                            {new Date(event.timestamp * 1000).toLocaleTimeString()}
-                                                        </span>
-                                                    </div>
-                                                </CardHeader>
-                                                <CardContent className="space-y-3">
-                                                    {comment && (
-                                                        <p className="text-sm text-slate-300 italic">"{comment}"</p>
-                                                    )}
-                                                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
-                                                        <Smartphone className="w-3 h-3" />
-                                                        <span>{event.screen_name || "Unknown Screen"}</span>
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-                                        )
-                                    })}
-                                </div>
-                            )
-                        } else {
-                            return (
-                                <div className="text-center py-12 text-muted-foreground">
-                                    <MessageSquare className="w-12 h-12 mx-auto mb-4 text-blue-500/30" />
-                                    <p>No user feedback collected in this session.</p>
-                                </div>
-                            )
-                        }
-                    })()}
-                </TabsContent>
+/* ---------- helpers ---------- */
+function StatusPill({ tone, label }: { tone: "success" | "danger" | "warning" | "info"; label: string }) {
+    const map = {
+        success: "text-[var(--success)] bg-[var(--success-soft)] border-[color:color-mix(in_oklab,var(--success)_30%,transparent)]",
+        danger:  "text-[var(--danger)] bg-[var(--danger-soft)] border-[color:color-mix(in_oklab,var(--danger)_30%,transparent)]",
+        warning: "text-[var(--warning)] bg-[var(--warning-soft)] border-[color:color-mix(in_oklab,var(--warning)_30%,transparent)]",
+        info:    "text-[var(--info)] bg-[var(--info-soft)] border-[color:color-mix(in_oklab,var(--info)_30%,transparent)]",
+    }
+    return (
+        <span className={`text-[11px] font-medium border rounded-full px-2 py-0.5 ${map[tone]}`}>
+            {label}
+        </span>
+    )
+}
 
-                {/* Success Tab - NEW */}
-                <TabsContent value="success" className="mt-6">
-                    {data.success_analysis?.length > 0 ? (
-                        <div className="grid gap-4">
-                            {data.success_analysis.map((success: any, index: number) => (
-                                <Card key={index} className="border-l-4 border-l-emerald-500 bg-emerald-500/5">
-                                    <CardHeader className="pb-2">
-                                        <div className="flex justify-between items-center">
-                                            <CardTitle className="text-base font-bold flex items-center gap-2 text-emerald-400">
-                                                <CheckCircle className="h-5 w-5" />
-                                                {success.action}
-                                            </CardTitle>
-                                            <span className="font-mono text-xs text-emerald-300/70 bg-emerald-900/30 px-2 py-1 rounded">
-                                                {success.timestamp}
-                                            </span>
-                                        </div>
-                                    </CardHeader>
-                                    <CardContent className="space-y-3">
-                                        {success.ocr_text && (
-                                            <div className="bg-black/30 p-2 rounded-md font-mono text-xs text-emerald-200 border border-emerald-500/20 inline-block">
-                                                OCR: "{success.ocr_text}"
-                                            </div>
-                                        )}
-                                        <p className="text-sm text-slate-300">{success.details}</p>
-                                    </CardContent>
-                                </Card>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="text-center py-12 text-muted-foreground">
-                            <p>No specific success actions detected.</p>
-                        </div>
-                    )}
-                </TabsContent>
+function CountChip({ tone, label, value }: { tone: "success" | "danger" | "warning" | "info"; label: string; value: number }) {
+    const map = {
+        success: "text-[var(--success)] border-[color:color-mix(in_oklab,var(--success)_30%,transparent)]",
+        danger:  "text-[var(--danger)] border-[color:color-mix(in_oklab,var(--danger)_30%,transparent)]",
+        warning: "text-[var(--warning)] border-[color:color-mix(in_oklab,var(--warning)_30%,transparent)]",
+        info:    "text-[var(--info)] border-[color:color-mix(in_oklab,var(--info)_30%,transparent)]",
+    }
+    return (
+        <span className={`inline-flex items-center gap-1.5 text-xs border rounded-full px-2 py-0.5 ${map[tone]}`}>
+            <span className="font-semibold tabular-nums">{value}</span>
+            <span className="text-[var(--text-tertiary)]">{label}</span>
+        </span>
+    )
+}
 
-                {/* Error Analysis Tab */}
-                <TabsContent value="errors" className="mt-6">
-                    {data.error_analysis?.length > 0 ? (
-                        <div className="grid gap-4">
-                            {data.error_analysis.map((error: any, index: number) => {
-                                const isPersistent = error.type === 'PERSISTENT_WARNING';
-                                const isCritical = error.type.includes('CRITICAL') || error.type.includes('FUNCTIONAL');
+function statusTone(status: string) {
+    switch (status) {
+        case "ERROR":
+        case "FAIL":
+        case "FAILED":
+            return { dot: "bg-[var(--danger)]", text: "text-[var(--danger)]", chip: "text-[var(--danger)] border-[color:color-mix(in_oklab,var(--danger)_30%,transparent)]" }
+        case "SUCCESS":
+            return { dot: "bg-[var(--success)]", text: "text-[var(--success)]", chip: "text-[var(--success)] border-[color:color-mix(in_oklab,var(--success)_30%,transparent)]" }
+        case "PERSISTENT_WARNING":
+            return { dot: "bg-[var(--warning)]", text: "text-[var(--warning)]", chip: "text-[var(--warning)] border-[color:color-mix(in_oklab,var(--warning)_30%,transparent)]" }
+        case "FEEDBACK":
+            return { dot: "bg-[var(--accent)]", text: "text-[var(--accent)]", chip: "text-[var(--accent)] border-[color:color-mix(in_oklab,var(--accent)_30%,transparent)]" }
+        default:
+            return { dot: "bg-[var(--text-tertiary)]", text: "text-[var(--text-primary)]", chip: "text-[var(--text-tertiary)] border-[var(--border)]" }
+    }
+}
 
-                                let borderClass = 'border-l-yellow-500';
-                                if (isCritical) borderClass = 'border-l-red-500';
-                                if (isPersistent) borderClass = 'border-l-blue-500'; // Blue for persistent/info
+function toneBorder(tone: "success" | "danger" | "warning" | "info") {
+    const map = {
+        success: "border-[color:color-mix(in_oklab,var(--success)_30%,transparent)]",
+        danger:  "border-[color:color-mix(in_oklab,var(--danger)_30%,transparent)]",
+        warning: "border-[color:color-mix(in_oklab,var(--warning)_30%,transparent)]",
+        info:    "border-[color:color-mix(in_oklab,var(--info)_30%,transparent)]",
+    }
+    return map[tone]
+}
 
-                                return (
-                                    <Card key={index} className={`border-l-4 ${borderClass} ${isPersistent ? 'opacity-80' : ''}`}>
-                                        <CardHeader className="pb-2">
-                                            <div className="flex justify-between items-center">
-                                                <CardTitle className="text-base font-bold flex items-center gap-2">
-                                                    {isCritical && <AlertCircle className="text-red-500 h-5 w-5" />}
-                                                    {!isCritical && !isPersistent && <AlertTriangle className="text-yellow-500 h-5 w-5" />}
-                                                    {isPersistent && <AlertTriangle className="text-blue-500 h-5 w-5" />}
-
-                                                    {error.type} {isPersistent && <span className="text-xs font-normal text-muted-foreground ml-2">(Ignored as Error)</span>}
-                                                </CardTitle>
-                                                <span className="font-mono text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
-                                                    {error.timestamp}
-                                                </span>
-                                            </div>
-                                        </CardHeader>
-                                        <CardContent className="space-y-3">
-                                            {error.ocr_text && (
-                                                <div className={`bg-black/30 p-3 rounded-md font-mono text-xs border ${isPersistent ? 'border-blue-500/20 text-blue-200' : 'border-red-500/20 text-red-200'}`}>
-                                                    OCR: "{error.ocr_text}"
-                                                </div>
-                                            )}
-                                            <p className="text-sm">{error.analysis}</p>
-                                        </CardContent>
-                                    </Card>
-                                )
-                            })}
-                        </div>
-                    ) : (
-                        <div className="text-center py-12 text-muted-foreground">
-                            <CheckCircle className="w-12 h-12 mx-auto mb-4 text-green-500/50" />
-                            <p>No explicit errors detected in this session.</p>
-                        </div>
-                    )}
-                </TabsContent>
-
-                {/* UX Insights Tab - NEW */}
-                <TabsContent value="ux" className="mt-6">
-                    {data.ux_analysis?.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {data.ux_analysis.map((insight: any, index: number) => {
-                                const isOk = insight.status === "OK";
-                                return (
-                                    <Card key={index} className={`border-l-4 ${isOk ? 'border-l-green-500' : 'border-l-orange-500'} bg-transparent`}>
-                                        <CardHeader className="pb-2">
-                                            <div className="flex justify-between items-start gap-4">
-                                                <CardTitle className="text-base font-bold flex items-center gap-2">
-                                                    {isOk ? <CheckCircle className="text-green-500 h-5 w-5" /> : <Lightbulb className="text-orange-500 h-5 w-5" />}
-                                                    {insight.heuristic}
-                                                </CardTitle>
-                                                <Badge variant="outline" className={`${isOk ? 'text-green-500 border-green-500/30' : 'text-orange-500 border-orange-500/30'}`}>
-                                                    {insight.status}
-                                                </Badge>
-                                            </div>
-                                        </CardHeader>
-                                        <CardContent className="space-y-2 text-sm">
-                                            <p className="text-slate-300">{insight.observation}</p>
-                                            {!isOk && insight.recommendation && (
-                                                <div className="mt-3 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-200 flex gap-2">
-                                                    <Activity className="h-4 w-4 shrink-0 mt-0.5" />
-                                                    <span>{insight.recommendation}</span>
-                                                </div>
-                                            )}
-                                        </CardContent>
-                                    </Card>
-                                )
-                            })}
-                        </div>
-                    ) : (
-                        <div className="text-center py-12 text-muted-foreground">
-                            <p>No specific UX insights available for this session.</p>
-                        </div>
-                    )}
-                </TabsContent>
-
-                {/* Technical Notes Tab */}
-                <TabsContent value="tech" className="mt-6">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Code className="w-5 h-5 text-blue-400" /> Technical Observations
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="prose dark:prose-invert">
-                            <ReactMarkdown>{data.technical_notes || "No technical notes available."}</ReactMarkdown>
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-
-                {/* Maestro Test Tab */}
-                <TabsContent value="test" className="mt-6">
-                    <Card className="bg-slate-950 border-slate-800">
-                        <CardHeader className="pb-2">
-                            <CardTitle className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <FileText className="w-4 h-4" /> Maestro Test Script (YAML)
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <pre className="font-mono text-xs text-green-400 overflow-x-auto p-4 rounded-lg bg-black/50 border border-white/5">
-                                {data.maestro_yaml || "# No Test generated"}
-                            </pre>
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-            </Tabs>
-        </div >
+function EmptyState({ icon, message }: { icon?: React.ReactNode; message: string }) {
+    return (
+        <div className="rounded-xl border border-dashed border-[var(--border)] py-16 px-6 text-center">
+            {icon && <div className="mx-auto mb-4 flex justify-center">{icon}</div>}
+            <p className="text-sm text-[var(--text-tertiary)]">{message}</p>
+        </div>
     )
 }

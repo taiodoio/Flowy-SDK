@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Upload, FileJson, CheckCircle, XCircle } from "lucide-react"
+import { Upload, FileJson, CheckCircle2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -16,34 +16,24 @@ export function SessionUploader({ onUpload, sessionId, onWireframesUploaded }: S
   const [isDragging, setIsDragging] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }, [])
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }, [])
+  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(true) }, [])
+  const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false) }, [])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
-
     const file = e.dataTransfer.files[0]
     if (file && (file.name.toLowerCase().endsWith('.json') || file.type === "application/json" || file.type === "text/json")) {
       processFile(file)
     } else {
       toast.error("Please upload a valid JSON file")
     }
-  }, [onUpload])
+  }, [])
 
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      processFile(file)
-    }
-  }, [onUpload])
+    if (file) processFile(file)
+  }, [])
 
   const processFile = (file: File) => {
     setFileName(file.name)
@@ -51,13 +41,10 @@ export function SessionUploader({ onUpload, sessionId, onWireframesUploaded }: S
     reader.onload = (event) => {
       const content = event.target?.result as string
       try {
-        // 1. Try standard JSON parse
         const json = JSON.parse(content)
 
-        // Flowy export bundle: { version, exported_at, events, wireframes }
         if (json.events && Array.isArray(json.events)) {
           const session = createSyntheticSession(json.events)
-          // Map wireframes from bundle format to WireframeFile format
           if (Array.isArray(json.wireframes) && json.wireframes.length > 0) {
             session.wireframes = json.wireframes.map((w: any, i: number) => ({
               screenName: w.screen_name ?? w.screenName ?? `screen_${i}`,
@@ -73,17 +60,14 @@ export function SessionUploader({ onUpload, sessionId, onWireframesUploaded }: S
         } else {
           onUpload(createSyntheticSession([json]))
         }
-
         toast.success("Session loaded successfully")
-      } catch (err) {
-        // 2. Fallback: NDJSON (Newline Delimited JSON)
+      } catch {
         try {
           const lines = content.split('\n').filter(line => line.trim() !== '')
           const events = lines.map(line => JSON.parse(line))
           onUpload(createSyntheticSession(events))
-          toast.success("Session loaded successfully (NDJSON)")
-        } catch (ndjsonErr) {
-          console.error("NDJSON Parse Error:", ndjsonErr)
+          toast.success("Session loaded (NDJSON)")
+        } catch {
           toast.error("Invalid JSON or NDJSON file")
           setFileName(null)
         }
@@ -92,20 +76,13 @@ export function SessionUploader({ onUpload, sessionId, onWireframesUploaded }: S
     reader.readAsText(file)
   }
 
-  const createSyntheticSession = (events: any[]): any => {
-    return {
-      id: `local-${new Date().getTime()}`,
-      deviceInfo: {
-        deviceModel: "Unknown (Log Import)",
-        osVersion: "iOS",
-        appVersion: "1.0"
-      },
-      events,
-      wireframes: [],
-    }
-  }
+  const createSyntheticSession = (events: any[]): any => ({
+    id: `local-${new Date().getTime()}`,
+    deviceInfo: { deviceModel: "Unknown (Log Import)", osVersion: "iOS", appVersion: "1.0" },
+    events,
+    wireframes: [],
+  })
 
-  const [wireframeDragging, setWireframeDragging] = useState(false)
   const [wireframeStatus, setWireframeStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle')
   const [wireframeCount, setWireframeCount] = useState(0)
 
@@ -129,64 +106,45 @@ export function SessionUploader({ onUpload, sessionId, onWireframesUploaded }: S
   }, [sessionId, onWireframesUploaded])
 
   return (
-    <div className="w-full max-w-2xl mx-auto my-8 space-y-4">
+    <div className="w-full p-4 space-y-3">
       <motion.div
         layout
         className={cn(
-          "relative border-2 border-dashed rounded-xl p-12 transition-colors duration-300 ease-in-out cursor-pointer group",
+          "relative border-2 border-dashed rounded-xl p-10 transition-colors duration-200 cursor-pointer group",
           isDragging
-            ? "border-primary bg-primary/5"
-            : "border-border hover:border-primary/50 hover:bg-muted/50",
-          fileName ? "border-green-500/50 bg-green-500/5" : ""
+            ? "border-[var(--accent)] bg-[var(--accent-soft)]"
+            : "border-[var(--border)] hover:border-[var(--border-strong)] bg-[var(--surface-2)]/50",
+          fileName && "border-[var(--success)] bg-[color:color-mix(in_oklab,var(--success)_8%,transparent)]"
         )}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => document.getElementById('file-upload')?.click()}
       >
-        <input
-          id="file-upload"
-          type="file"
-          accept=".json"
-          className="hidden"
-          onChange={handleFileInput}
-        />
-
-        <div className="flex flex-col items-center justify-center text-center gap-4">
+        <input id="file-upload" type="file" accept=".json" className="hidden" onChange={handleFileInput} />
+        <div className="flex flex-col items-center justify-center text-center gap-3">
           <AnimatePresence mode="wait">
             {fileName ? (
-              <motion.div
-                key="success"
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.8, opacity: 0 }}
-                className="flex flex-col items-center"
-              >
-                <div className="h-16 w-16 rounded-full bg-green-500/20 flex items-center justify-center mb-4">
-                  <CheckCircle className="h-8 w-8 text-green-500" />
+              <motion.div key="success" initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="flex flex-col items-center">
+                <div className="h-12 w-12 rounded-full bg-[var(--success-soft)] flex items-center justify-center mb-3">
+                  <CheckCircle2 className="h-6 w-6 text-[var(--success)]" />
                 </div>
-                <h3 className="text-lg font-semibold text-foreground">{fileName}</h3>
-                <p className="text-sm text-muted-foreground mt-1">Ready for analysis</p>
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">{fileName}</h3>
+                <p className="text-xs text-[var(--text-tertiary)] mt-1">Ready for analysis</p>
               </motion.div>
             ) : (
-              <motion.div
-                key="upload"
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.8, opacity: 0 }}
-                className="flex flex-col items-center"
-              >
+              <motion.div key="upload" initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="flex flex-col items-center">
                 <div className={cn(
-                  "h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4 transition-transform duration-300",
-                  isDragging ? "scale-110" : "group-hover:scale-110"
+                  "h-12 w-12 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center justify-center mb-3 transition-transform",
+                  isDragging ? "scale-110" : "group-hover:scale-105"
                 )}>
-                  <Upload className="h-8 w-8 text-primary" />
+                  <Upload className="h-5 w-5 text-[var(--text-tertiary)]" />
                 </div>
-                <h3 className="text-lg font-semibold text-foreground">
-                  {isDragging ? "Drop it here!" : "Upload Session Log"}
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                  {isDragging ? "Drop your file" : "Upload session log"}
                 </h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Drag and drop your JSON file here, or click to browse
+                <p className="text-xs text-[var(--text-tertiary)] mt-1">
+                  Drag and drop a JSON file, or click to browse
                 </p>
               </motion.div>
             )}
@@ -194,28 +152,11 @@ export function SessionUploader({ onUpload, sessionId, onWireframesUploaded }: S
         </div>
       </motion.div>
 
-      {/* Wireframe upload zone — only shown once a session is saved */}
       {sessionId && (
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
-          className={cn(
-            "relative border border-dashed rounded-xl p-5 transition-colors duration-200 cursor-pointer",
-            wireframeDragging
-              ? "border-purple-500 bg-purple-500/10"
-              : wireframeStatus === 'done'
-              ? "border-purple-500/40 bg-purple-500/5"
-              : "border-border hover:border-purple-500/40 hover:bg-muted/30"
-          )}
-          onDragOver={e => { e.preventDefault(); setWireframeDragging(true) }}
-          onDragLeave={e => { e.preventDefault(); setWireframeDragging(false) }}
-          onDrop={e => {
-            e.preventDefault()
-            setWireframeDragging(false)
-            const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.json'))
-            if (files.length) uploadWireframes(files)
-            else toast.error('Please drop .json wireframe files')
-          }}
+          className="border border-dashed border-[var(--border)] rounded-xl p-3 cursor-pointer hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)]/50 transition-colors"
           onClick={() => document.getElementById('wireframe-upload')?.click()}
         >
           <input
@@ -230,20 +171,15 @@ export function SessionUploader({ onUpload, sessionId, onWireframesUploaded }: S
             }}
           />
           <div className="flex items-center gap-3 text-sm">
-            <div className={cn(
-              "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0",
-              wireframeStatus === 'done' ? "bg-purple-500/20" : "bg-muted"
-            )}>
-              <FileJson className={cn("h-4 w-4", wireframeStatus === 'done' ? "text-purple-400" : "text-muted-foreground")} />
+            <div className="h-8 w-8 rounded-lg bg-[var(--surface-2)] flex items-center justify-center flex-shrink-0">
+              <FileJson className="h-4 w-4 text-[var(--text-tertiary)]" />
             </div>
-            <div>
-              {wireframeStatus === 'uploading' && <span className="text-slate-400">Uploading wireframes…</span>}
-              {wireframeStatus === 'done' && <span className="text-purple-300">{wireframeCount} wireframe{wireframeCount !== 1 ? 's' : ''} attached</span>}
-              {wireframeStatus === 'error' && <span className="text-red-400">Upload failed — try again</span>}
+            <div className="text-xs">
+              {wireframeStatus === 'uploading' && <span className="text-[var(--text-secondary)]">Uploading wireframes…</span>}
+              {wireframeStatus === 'done' && <span className="text-[var(--text-primary)]">{wireframeCount} wireframe{wireframeCount !== 1 ? 's' : ''} attached</span>}
+              {wireframeStatus === 'error' && <span className="text-[var(--danger)]">Upload failed — try again</span>}
               {wireframeStatus === 'idle' && (
-                <span className="text-muted-foreground">
-                  {wireframeDragging ? 'Drop wireframe files!' : 'Attach wireframes (optional) — drop flowy_*.json files here'}
-                </span>
+                <span className="text-[var(--text-tertiary)]">Optional: drop flowy_*.json wireframe files</span>
               )}
             </div>
           </div>

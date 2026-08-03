@@ -38,5 +38,6 @@ export interface SessionData {
   events: FlowyEvent[];
   deviceInfo: any;
   report?: any;
+  analyzedBy?: 'local' | 'remote';
   wireframes?: WireframeFile[];
 }
