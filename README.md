@@ -1,6 +1,6 @@
 # Flowy
 
-![Flowy Hero](assets/flowy_hero_2.png)
+![Flowy Hero](assets/flowy_hero_3.png)
 
 Flowy is a platform for analyzing mobile user sessions without adding manual tags to every interaction. Its SDKs capture events, recognized text, visual hierarchies, and compressed screenshots; the dashboard reconstructs the user journey and highlights taps, errors, screens, and friction points.
 
