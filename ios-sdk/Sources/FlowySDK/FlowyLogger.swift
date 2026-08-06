@@ -302,7 +302,10 @@ class FlowyLogger {
     
     private func getKeyWindow() -> UIWindow? {
         // iOS 13+ compatible helper
-        return UIApplication.shared.windows.first { $0.isKeyWindow }
+        return UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }
     }
     
     // MARK: - Heuristic Scans (Legacy/Hybrid)
@@ -444,7 +447,10 @@ class FlowyLogger {
         var domSnapshot: [FlowyDomNode] = []
         if let win = window {
              domSnapshot = FlowyTreeWalker.captureHierarchy(in: win)
-        } else if let win = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) {
+        } else if let win = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .flatMap({ $0.windows })
+            .first(where: { $0.isKeyWindow }) {
              domSnapshot = FlowyTreeWalker.captureHierarchy(in: win)
         }
         
