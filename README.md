@@ -378,5 +378,3 @@ Flowy-SDK/
 ## License
 
 The repository currently does not contain a LICENSE file. Confirm the terms of use with the maintainers before distributing Flowy or embedding it in a product.
-
-*Built with ❤️ by Flavio Montagner*
